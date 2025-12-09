@@ -1,2 +1,195 @@
 # feedback-a-tron
-Helps you feedback to git platforms; Helps repos respond to you
+
+Comprehensive GitHub repository management, analysis, and feedback system with Datalog-powered intelligence.
+
+## Overview
+
+feedback-a-tron started as a tool to investigate a persistent bug in Claude Code's web UI (archived sessions reappearing). It evolved into a complete GitHub management ecosystem.
+
+### Features
+
+- **MCP Server** (Elixir) — Claude Code integration via Model Context Protocol
+- **Datalog Analysis** — Pattern detection, related issue finding, regression tracking
+- **Multi-repo Scraper** — Bulk ingest issues from many repos
+- **Personal Stats** (Julia) — Track your GitHub activity over time
+- **Typed Config** (Nickel) — Validated configuration with contracts
+- **Web Dashboard** (ReScript-Tea) — Visualize your data (planned)
+
+## Quick Start
+
+### Using Nix
+
+```bash
+# Enter development shell
+nix develop
+
+# Or run directly
+nix run github:hyperpolymath/feedback-a-tron
+```
+
+### Using Guix
+
+```bash
+# Add channel (see packaging/guix/packages.scm)
+guix install feedback-a-tron
+```
+
+### Using Container
+
+```bash
+# Build with nerdctl (or podman)
+nerdctl build -t feedback-a-tron -f packaging/Containerfile .
+
+# Run MCP server
+nerdctl run -it --rm \
+  -e GITHUB_TOKEN=$GITHUB_TOKEN \
+  feedback-a-tron
+```
+
+### Manual Setup
+
+```bash
+# Elixir MCP server
+cd elixir-mcp
+mix deps.get
+mix compile
+mix release
+
+# Julia stats
+cd julia-stats
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+
+# Run scraper
+./scripts/scraper.exs --user hyperpolymath --output facts.dl
+```
+
+## Components
+
+### elixir-mcp/
+
+The core MCP server implementing:
+
+- GitHub REST API client
+- ETS-backed Datalog fact store
+- Semi-naive bottom-up evaluation
+- Analysis queries (related issues, duplicates, regressions, etc.)
+- Issue templates with auto-detection
+
+**MCP Tools:**
+- `create_issue` — Create issues with templates
+- `search_issues` — GitHub search
+- `analyze_issues` — Run Datalog analysis
+- `datalog_query` — Raw Datalog queries
+
+### julia-stats/
+
+Personal GitHub activity statistics:
+
+```julia
+using FeedbackStats
+
+FeedbackStats.configure!(token=ENV["GITHUB_TOKEN"], username="hyperpolymath")
+activity = FeedbackStats.fetch_all_activity()
+stats = FeedbackStats.compute_stats(activity)
+FeedbackStats.summary(stats)
+```
+
+### config/
+
+Nickel configuration with full type contracts:
+
+```nickel
+# config/example.ncl
+{
+  github.default_repo = "anthropics/claude-code",
+  repos = [
+    { owner = "anthropics", name = "claude-code", ... }
+  ],
+  datalog.backend = 'ets,
+  mcp.enabled = true,
+}
+```
+
+### scripts/
+
+- `scraper.exs` — Multi-repo issue scraper
+
+## Datalog Analysis
+
+The system uses Datalog for declarative issue analysis:
+
+```prolog
+% Find related issues
+related(X, Y) :- mentions_issue(X, Y).
+related(X, Y) :- affects_component(X, C), affects_component(Y, C), X \= Y.
+
+% Detect regressions
+regression(I) :- closed_at(I, T1, _), reopened_at(I, T2, _), T2 > T1.
+
+% State sync issues (like the archive bug)
+state_sync_issue(I) :- issue_label(I, "memory"), issue_body_contains(I, "sync").
+```
+
+## Claude Code Integration
+
+Add to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "feedback-a-tron": {
+      "command": "/path/to/gh_manage",
+      "args": ["--mcp-server"]
+    }
+  }
+}
+```
+
+Then Claude can:
+
+```
+Create a bug report for anthropics/claude-code about the archive sync issue
+```
+
+## Architecture
+
+```
+┌─────────────────┐     ┌──────────────────┐
+│  Claude Code    │────▶│  MCP Server      │
+│  (or other AI)  │     │  (Elixir/OTP)    │
+└─────────────────┘     └────────┬─────────┘
+                                 │
+                    ┌────────────┼────────────┐
+                    ▼            ▼            ▼
+            ┌───────────┐ ┌───────────┐ ┌───────────┐
+            │  GitHub   │ │  Datalog  │ │  Analysis │
+            │  API      │ │  Store    │ │  Rules    │
+            └───────────┘ └───────────┘ └───────────┘
+                                 │
+                                 ▼
+                        ┌───────────────┐
+                        │  Oxigraph     │
+                        │  (optional)   │
+                        └───────────────┘
+```
+
+## STATE.scm
+
+Cross-conversation context is tracked in `STATE.scm` — a Guile Scheme file that records:
+- Project state and phase
+- Tech stack decisions
+- Component status
+- TODO/completed items
+- Design decision log
+
+This enables AI assistants to maintain context across sessions.
+
+## License
+
+Apache 2.0
+
+## Origin
+
+This project originated from investigating Claude Code issue: "Web UI session archive does not persist" — archived sessions immediately reappear due to server-side state sync overwriting user actions.
+
+Related issues: #12114, #10839, #8667, #9581
