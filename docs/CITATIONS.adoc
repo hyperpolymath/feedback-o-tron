@@ -1,0 +1,36 @@
+= feedback-a-tron - Citation Guide
+:toc:
+
+== BibTeX
+
+[source,bibtex]
+----
+@software{feedback-a-tron_2025,
+  author = {Polymath, Hyper},
+  title = {feedback-a-tron},
+  year = {2025},
+  url = {https://github.com/hyperpolymath/feedback-a-tron},
+  license = {AGPL-3.0-or-later}
+}
+----
+
+== Harvard Style
+
+Polymath, H. (2025) _feedback-a-tron_ [Computer software]. Available at: https://github.com/hyperpolymath/feedback-a-tron
+
+== OSCOLA
+
+Hyper Polymath, 'feedback-a-tron' (2025) <https://github.com/hyperpolymath/feedback-a-tron>
+
+== MLA
+
+Polymath, Hyper. "feedback-a-tron." 2025, github.com/hyperpolymath/feedback-a-tron.
+
+== APA 7
+
+Polymath, H. (2025). _feedback-a-tron_ [Computer software]. GitHub. https://github.com/hyperpolymath/feedback-a-tron
+
+== See Also
+
+* link:../CITATION.cff[CITATION.cff]
+* link:../codemeta.json[codemeta.json]

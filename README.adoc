@@ -1,71 +1,71 @@
-# feedback-a-tron
+= feedback-a-tron
 
 Comprehensive GitHub repository management, analysis, and feedback system with Datalog-powered intelligence.
 
-## Overview
+== Overview
 
 feedback-a-tron started as a tool to investigate a persistent bug in Claude Code's web UI (archived sessions reappearing). It evolved into a complete GitHub management ecosystem.
 
-### Features
+=== Features
 
-- **MCP Server** (Elixir) — Claude Code integration via Model Context Protocol
-- **Datalog Analysis** — Pattern detection, related issue finding, regression tracking
-- **Multi-repo Scraper** — Bulk ingest issues from many repos
-- **Personal Stats** (Julia) — Track your GitHub activity over time
-- **Typed Config** (Nickel) — Validated configuration with contracts
-- **Web Dashboard** (ReScript-Tea) — Visualize your data (planned)
+- *MCP Server* (Elixir) — Claude Code integration via Model Context Protocol
+- *Datalog Analysis* — Pattern detection, related issue finding, regression tracking
+- *Multi-repo Scraper* — Bulk ingest issues from many repos
+- *Personal Stats* (Julia) — Track your GitHub activity over time
+- *Typed Config* (Nickel) — Validated configuration with contracts
+- *Web Dashboard* (ReScript-Tea) — Visualize your data (planned)
 
-## Quick Start
+== Quick Start
 
-### Using Nix
+=== Using Nix
 
 ```bash
-# Enter development shell
+= Enter development shell
 nix develop
 
-# Or run directly
+= Or run directly
 nix run github:hyperpolymath/feedback-a-tron
 ```
 
-### Using Guix
+=== Using Guix
 
 ```bash
-# Add channel (see packaging/guix/packages.scm)
+= Add channel (see packaging/guix/packages.scm)
 guix install feedback-a-tron
 ```
 
-### Using Container
+=== Using Container
 
 ```bash
-# Build with nerdctl (or podman)
+= Build with nerdctl (or podman)
 nerdctl build -t feedback-a-tron -f packaging/Containerfile .
 
-# Run MCP server
+= Run MCP server
 nerdctl run -it --rm \
   -e GITHUB_TOKEN=$GITHUB_TOKEN \
   feedback-a-tron
 ```
 
-### Manual Setup
+=== Manual Setup
 
 ```bash
-# Elixir MCP server
+= Elixir MCP server
 cd elixir-mcp
 mix deps.get
 mix compile
 mix release
 
-# Julia stats
+= Julia stats
 cd julia-stats
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
-# Run scraper
+= Run scraper
 ./scripts/scraper.exs --user hyperpolymath --output facts.dl
 ```
 
-## Components
+== Components
 
-### elixir-mcp/
+=== elixir-mcp/
 
 The core MCP server implementing:
 
@@ -75,13 +75,13 @@ The core MCP server implementing:
 - Analysis queries (related issues, duplicates, regressions, etc.)
 - Issue templates with auto-detection
 
-**MCP Tools:**
+*MCP Tools:*
 - `create_issue` — Create issues with templates
 - `search_issues` — GitHub search
 - `analyze_issues` — Run Datalog analysis
 - `datalog_query` — Raw Datalog queries
 
-### julia-stats/
+=== julia-stats/
 
 Personal GitHub activity statistics:
 
@@ -94,12 +94,12 @@ stats = FeedbackStats.compute_stats(activity)
 FeedbackStats.summary(stats)
 ```
 
-### config/
+=== config/
 
 Nickel configuration with full type contracts:
 
 ```nickel
-# config/example.ncl
+= config/example.ncl
 {
   github.default_repo = "anthropics/claude-code",
   repos = [
@@ -110,11 +110,11 @@ Nickel configuration with full type contracts:
 }
 ```
 
-### scripts/
+=== scripts/
 
 - `scraper.exs` — Multi-repo issue scraper
 
-## Datalog Analysis
+== Datalog Analysis
 
 The system uses Datalog for declarative issue analysis:
 
@@ -130,7 +130,7 @@ regression(I) :- closed_at(I, T1, _), reopened_at(I, T2, _), T2 > T1.
 state_sync_issue(I) :- issue_label(I, "memory"), issue_body_contains(I, "sync").
 ```
 
-## Claude Code Integration
+== Claude Code Integration
 
 Add to your MCP config:
 
@@ -151,7 +151,7 @@ Then Claude can:
 Create a bug report for anthropics/claude-code about the archive sync issue
 ```
 
-## Architecture
+== Architecture
 
 ```
 ┌─────────────────┐     ┌──────────────────┐
@@ -173,7 +173,7 @@ Create a bug report for anthropics/claude-code about the archive sync issue
                         └───────────────┘
 ```
 
-## STATE.scm
+== STATE.scm
 
 Cross-conversation context is tracked in `STATE.scm` — a Guile Scheme file that records:
 - Project state and phase
@@ -184,11 +184,11 @@ Cross-conversation context is tracked in `STATE.scm` — a Guile Scheme file tha
 
 This enables AI assistants to maintain context across sessions.
 
-## License
+== License
 
 Apache 2.0
 
-## Origin
+== Origin
 
 This project originated from investigating Claude Code issue: "Web UI session archive does not persist" — archived sessions immediately reappear due to server-side state sync overwriting user actions.
 
