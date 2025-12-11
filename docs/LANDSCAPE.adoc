@@ -1,0 +1,294 @@
+= Feedback System Landscape Analysis
+Jonathan D.A. Jewell <jonathan.jewell@gmail.com>
+:toc: macro
+:icons: font
+
+Comprehensive analysis of feedback management systems, crash reporters, and what feedback-a-tron brings that's missing.
+
+toc::[]
+
+== Current Landscape
+
+=== Open Source Feedback Platforms
+
+[cols="1,1,1,2"]
+|===
+| Project | Stars | Tech | Gap
+
+| https://github.com/getfider/fider[Fider]
+| 3.9k
+| Go, PostgreSQL
+| No multi-platform submission, no network verification
+
+| https://github.com/logchimp/logchimp[LogChimp]
+| 958
+| Node.js, Vue, PostgreSQL
+| No API for automated submission, no crash integration
+
+| https://github.com/clearflask/clearflask[ClearFlask]
+| 398
+| Java, React
+| Heavy, complex setup, no CLI integration
+
+| Astuto
+| ~200
+| Ruby on Rails
+| Simple, lacks advanced features
+|===
+
+=== OS-Level Crash Reporters
+
+[cols="1,1,2"]
+|===
+| System | Platform | Architecture
+
+| **ABRT** (Automatic Bug Reporting Tool)
+| Fedora/RHEL
+| Daemon-based, plugin architecture, integrates with Bugzilla. FAF (Fedora Analysis Framework) provides crash aggregation and similarity detection.
+
+| **Apport**
+| Ubuntu/Debian
+| Hooks into kernel crash signals, produces .crash files, retraces via Launchpad, package hooks for metadata.
+
+| **Windows Feedback Hub**
+| Windows 10/11
+| diagtrack service (SYSTEM), upvote-based prioritization, telemetry integration.
+
+| **macOS Crash Reporter**
+| macOS
+| Automatic crash log collection, Apple-only destination.
+
+| **KDE DrKonqi**
+| KDE Plasma
+| Crash handler with backtrace collection, Bugzilla integration.
+
+| **GNOME Automatic Bug Reporting**
+| GNOME
+| abrt-gnome integration, GitLab-based upstream reporting.
+|===
+
+=== Commercial Solutions
+
+[cols="1,1,1"]
+|===
+| Product | Starting Price | Notes
+
+| UserVoice
+| $699/mo
+| Enterprise-only, priced out small teams
+
+| Canny
+| $359/mo
+| Popular, good UX, but closed source
+
+| Productboard
+| $25/user/mo
+| Product management focused
+
+| Aha!
+| $59/user/mo
+| Roadmap-heavy
+|===
+
+== What's Missing Everywhere
+
+=== 1. Multi-Platform Submission
+
+**Problem:** Every tool is a silo. GitHub Issues don't sync with Jira. Bugzilla doesn't talk to GitLab.
+
+**feedback-a-tron solution:**
+[source,elixir]
+----
+FeedbackATron.Submitter.submit(issue, platforms: [:github, :gitlab, :jira, :bugzilla])
+----
+
+Single submission → multiple destinations with deduplication.
+
+=== 2. Network-Layer Verification
+
+**Problem:** Feedback silently fails. Network issues, rate limits, DNS problems - users never know if their feedback arrived.
+
+**feedback-a-tron solution:**
+- Pre-flight network health check
+- Path MTU discovery
+- Jitter and packet loss measurement
+- DNSSEC/DANE verification
+- BGP route origin validation
+- Post-submission verification (check issue actually exists)
+
+=== 3. Credential Rotation
+
+**Problem:** API rate limits. Single token exhausted = all submissions fail.
+
+**feedback-a-tron solution:**
+- Multiple credentials per platform
+- Automatic rotation
+- Rate limit awareness
+- Fallback to CLI tools (gh, glab)
+
+=== 4. MCP Integration for AI Assistants
+
+**Problem:** AI coding assistants (Claude Code, Cursor, Copilot) discover bugs but can't automatically report them.
+
+**feedback-a-tron solution:**
+- MCP tool `submit_feedback` exposed to Claude Code
+- Automatic issue creation with context
+- Deduplication against existing issues
+- Semantic similarity matching
+
+=== 5. Crash Correlation Across Platforms
+
+**Problem:** Same crash manifests in multiple distros. No way to correlate Ubuntu Apport reports with Fedora ABRT reports.
+
+**feedback-a-tron solution:**
+- Unified crash signature format
+- Cross-platform deduplication
+- Similarity engine (like FAF but multi-distro)
+
+=== 6. Semantic Issue Linking
+
+**Problem:** Duplicate issues across repos. Related issues not linked.
+
+**feedback-a-tron solution:**
+- Datalog-based semantic querying
+- RDF store for relationship tracking
+- Automatic "related to" suggestions
+
+=== 7. Interoperability Standard
+
+**Problem:** No protocol for feedback exchange between systems.
+
+**Proposed solution:** See our MCP security SEPs - same approach for feedback:
+- `.well-known/feedback` discovery endpoint
+- Standard issue exchange format (JSON-LD with schema.org)
+- Cross-platform issue linking protocol
+
+== Architecture Comparison
+
+=== Traditional (Siloed)
+
+[source]
+----
+User → Single Platform → Single Tracker → Manual Triage
+----
+
+=== ABRT/Apport (OS-Integrated)
+
+[source]
+----
+Crash Signal → Daemon → Problem Directory → Retrace → Single Bugzilla
+                                                ↓
+                                        Aggregation (FAF)
+----
+
+=== feedback-a-tron (Unified)
+
+[source]
+----
+                    ┌─→ GitHub Issues
+                    ├─→ GitLab Issues
+User/AI → MCP Tool ─┼─→ Jira
+          │         ├─→ Bugzilla
+          │         └─→ Email
+          │
+          ├─→ Network Verification Layer
+          │     ├─ DNS/DNSSEC check
+          │     ├─ TLS/DANE check
+          │     ├─ Latency/jitter measurement
+          │     ├─ Route origin validation
+          │     └─ Post-submit verification
+          │
+          ├─→ Deduplication Engine
+          │     ├─ Semantic similarity (Datalog)
+          │     └─ Cross-platform matching
+          │
+          └─→ Audit Log (RDF store)
+                └─ Full provenance tracking
+----
+
+== Standards We Should Propose
+
+=== 1. Issue Exchange Format
+
+Based on schema.org + extensions:
+
+[source,json]
+----
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareBug",
+  "identifier": "urn:feedback:sha256:abc123",
+  "name": "Content filter false positive on .gitignore",
+  "description": "...",
+  "severity": "major",
+  "reproducibility": "always",
+  "affectedSoftware": {
+    "@type": "SoftwareApplication",
+    "name": "Claude Code",
+    "version": "2.0.65"
+  },
+  "reportedBy": {
+    "@type": "Person",
+    "identifier": "urn:github:user:hyperpolymath"
+  },
+  "crossReferences": [
+    "https://github.com/anthropics/claude-code/issues/13683"
+  ]
+}
+----
+
+=== 2. Feedback Discovery (.well-known/feedback)
+
+[source,json]
+----
+{
+  "feedback_version": "1.0",
+  "endpoints": {
+    "issues": "https://api.example.com/issues",
+    "discussions": "https://api.example.com/discussions"
+  },
+  "supported_formats": ["json-ld", "github-issue", "jira"],
+  "authentication": {
+    "methods": ["oauth2", "api_key"]
+  },
+  "rate_limits": {
+    "issues_per_hour": 100
+  }
+}
+----
+
+=== 3. TM Forum Alignment
+
+TM Forum has TMF621 (Trouble Ticket Management API). We should align with this for enterprise interoperability.
+
+== Roadmap for feedback-a-tron
+
+=== Phase 1: Core Submission (Current)
+- [x] Multi-platform issue submission
+- [x] Credential rotation
+- [x] Network verification
+- [x] MCP tool integration
+
+=== Phase 2: Intelligence
+- [ ] Semantic deduplication (Datalog engine)
+- [ ] Cross-platform issue linking
+- [ ] Crash signature extraction
+- [ ] Similarity matching
+
+=== Phase 3: Standards
+- [ ] Propose .well-known/feedback to IETF
+- [ ] Schema.org vocabulary for bugs
+- [ ] TMF621 compatibility layer
+
+=== Phase 4: Distribution Integration
+- [ ] ABRT plugin for multi-platform submission
+- [ ] Apport hook for cross-distro correlation
+- [ ] Windows Feedback Hub bridge (WSL)
+
+== References
+
+- https://wiki.ubuntu.com/Apport[Ubuntu Apport]
+- https://fedoraproject.org/wiki/Automatic_Bug_Reporting_Tool[Fedora ABRT]
+- https://faf.readthedocs.io/[FAF - Fedora Analysis Framework]
+- https://www.tmforum.org/open-apis/[TM Forum Open APIs]
+- https://schema.org/SoftwareApplication[Schema.org Software]
