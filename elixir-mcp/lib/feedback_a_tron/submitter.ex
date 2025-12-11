@@ -21,7 +21,7 @@ defmodule FeedbackATron.Submitter do
   use GenServer
   require Logger
 
-  alias FeedbackATron.{Credentials, Templates, Dedup, AuditLog}
+  alias FeedbackATron.{Credentials, Deduplicator, AuditLog}
 
   @platforms [:github, :gitlab, :bitbucket, :codeberg, :email]
 
@@ -248,10 +248,11 @@ defmodule FeedbackATron.Submitter do
   end
 
   defp maybe_dedupe(false, _platform, _issue), do: :ok
-  defp maybe_dedupe(true, platform, issue) do
-    case Dedup.find_similar(platform, issue) do
-      [] -> :ok
-      similar -> {:error, {:duplicate_found, similar}}
+  defp maybe_dedupe(true, _platform, issue) do
+    case Deduplicator.check(issue) do
+      {:ok, :unique} -> :ok
+      {:duplicate, existing} -> {:error, {:duplicate_found, existing}}
+      {:similar, matches} -> {:error, {:similar_found, matches}}
     end
   end
 

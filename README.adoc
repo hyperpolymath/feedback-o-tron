@@ -1,5 +1,6 @@
 = feedback-a-tron
 Jonathan D.A. Jewell <jonathan.jewell@gmail.com>
+v1.0.0, 2025-12-11
 :toc: macro
 :icons: font
 :source-highlighter: rouge
@@ -9,8 +10,9 @@ Jonathan D.A. Jewell <jonathan.jewell@gmail.com>
 :url-bitbucket: https://bitbucket.org/hyperpolymath/feedback-a-tron
 :url-codeberg: https://codeberg.org/hyperpolymath/feedback-a-tron
 
-Automated user feedback collection and analysis
+Automated multi-platform feedback submission with network verification
 
+image:https://img.shields.io/badge/version-1.0.0-blue[Version 1.0.0]
 image:https://img.shields.io/badge/RSR-Certified-gold[RSR Certified]
 image:https://img.shields.io/badge/License-AGPL%20v3-blue[License]
 
@@ -18,34 +20,140 @@ toc::[]
 
 == Overview
 
-feedback-a-tron is part of the link:https://rhodium.sh[Rhodium Standard] (RSR) ecosystem.
+FeedbackATron automates the submission of issues, bug reports, and feedback across multiple platforms simultaneously. It ensures submissions actually reach their destination through comprehensive network verification.
 
-Domain: *software-development*
+=== Key Features
 
-== Installation
+* **Multi-platform submission**: GitHub, GitLab, Bitbucket, Codeberg (simultaneously)
+* **Deduplication**: Prevents duplicate submissions using fuzzy matching
+* **Network verification**: Confirms submissions reached their destination
+* **Credential rotation**: Avoids rate limits by rotating credentials
+* **Audit logging**: Complete record of all operations
+* **MCP integration**: Works as Claude Code tool
+
+== Quick Start
 
 [source,bash]
 ----
-# Clone from GitHub (primary)
+# Clone
 git clone {url-github}
+cd feedback-a-tron/elixir-mcp
 
-# Or from mirrors
-git clone {url-gitlab}
-git clone {url-codeberg}
+# Install dependencies
+mix deps.get
+
+# Run
+mix run --no-halt
 ----
 
-== RSR Stack
+== Usage
 
-This project follows RSR conventions:
+=== As Elixir Library
 
-* ✅ ReScript for frontend/logic
-* ✅ Deno for JS runtime
-* ✅ WASM for performance-critical code
-* ✅ Rust/OCaml/Haskell for systems/proofs
-* ✅ Guile/Scheme for configuration
-* ❌ No TypeScript
-* ❌ No Go
-* ❌ No npm
+[source,elixir]
+----
+# Submit to GitHub
+FeedbackATron.Submitter.submit(%{
+  title: "Bug: Something is broken",
+  body: "Description of the issue...",
+  repo: "owner/repo"
+}, platforms: [:github])
+
+# Submit to multiple platforms
+FeedbackATron.Submitter.submit(%{
+  title: "Feature request",
+  body: "...",
+  repo: "owner/repo"
+}, platforms: [:github, :gitlab, :codeberg])
+
+# With deduplication check
+FeedbackATron.Deduplicator.check(%{title: "...", body: "..."})
+# => {:ok, :unique} | {:duplicate, existing} | {:similar, matches}
+----
+
+=== As MCP Tool (Claude Code)
+
+The MCP server exposes a `submit_feedback` tool:
+
+[source,json]
+----
+{
+  "tool": "submit_feedback",
+  "params": {
+    "title": "Bug report",
+    "body": "...",
+    "platforms": ["github", "gitlab"],
+    "repo": "owner/repo"
+  }
+}
+----
+
+== Architecture
+
+[source]
+----
+┌─────────────────────────────────────────────────────────────┐
+│                     FeedbackATron                           │
+├─────────────────────────────────────────────────────────────┤
+│  ┌──────────┐  ┌──────────────┐  ┌─────────────────────┐   │
+│  │ Submitter│  │ Deduplicator │  │ NetworkVerifier     │   │
+│  │          │  │              │  │  - Latency/jitter   │   │
+│  │ - GitHub │  │ - Exact hash │  │  - DNS verification │   │
+│  │ - GitLab │  │ - Fuzzy match│  │  - TLS validation   │   │
+│  │ - Bitbucket│ │ - Semantic  │  │  - BGP/RPKI checks  │   │
+│  │ - Codeberg│ │              │  │                     │   │
+│  └──────────┘  └──────────────┘  └─────────────────────┘   │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                   AuditLog                            │  │
+│  │  - All submissions recorded                          │  │
+│  │  - JSON lines format                                 │  │
+│  │  - Automatic rotation                                │  │
+│  └──────────────────────────────────────────────────────┘  │
+├─────────────────────────────────────────────────────────────┤
+│                   Credentials                               │
+│  - Environment variables                                    │
+│  - CLI configs (gh, glab)                                  │
+│  - Rotation for rate limit avoidance                       │
+└─────────────────────────────────────────────────────────────┘
+----
+
+== Network Verification
+
+Before and after submission, FeedbackATron verifies:
+
+[cols="1,2"]
+|===
+| Check | Purpose
+
+| Latency/Jitter | Detect unstable connections
+| Packet loss | Ensure data integrity
+| DNS resolution | Verify correct destination
+| DNSSEC | Prevent DNS spoofing
+| TLS certificate | Verify endpoint identity
+| BGP origin | Detect route hijacking
+|===
+
+== Configuration
+
+Environment variables:
+
+[source,bash]
+----
+# GitHub
+export GITHUB_TOKEN=ghp_...
+
+# GitLab
+export GITLAB_TOKEN=glpat_...
+
+# Bitbucket
+export BITBUCKET_TOKEN=...
+
+# Codeberg
+export CODEBERG_TOKEN=...
+----
+
+Or use CLI tools (gh, glab) which are auto-detected.
 
 == Mirrors
 
@@ -63,14 +171,8 @@ This project follows RSR conventions:
 
 Licensed under AGPL-3.0-or-later OR LicenseRef-Palimpsest-0.5.
 
-See link:LICENSE[LICENSE] for details.
+See link:LICENSE.txt[LICENSE.txt] for details.
 
 == Contributing
 
 See link:CONTRIBUTING.adoc[CONTRIBUTING.adoc].
-
-== Metadata
-
-* Domain: software-development
-* Framework: RSR (Rhodium Standard Repository)
-* Dublin Core: link:.well-known/dc.xml[.well-known/dc.xml]

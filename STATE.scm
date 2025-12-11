@@ -24,8 +24,9 @@
                 "https://bitbucket.org/hyperpolymath/feedback-a-tron"
                 "https://codeberg.org/hyperpolymath/feedback-a-tron"))
     (inception-date . "2024-12-09")
-    (phase . "alpha")
-    (version . "0.2.0")
+    (phase . "stable")
+    (version . "1.0.0")
+    (released . "2025-12-11")
     (conversation-origin . "Claude Code API error investigation → MCP security proposals")))
 
 ;;; ============================================================
@@ -33,32 +34,24 @@
 ;;; ============================================================
 
 (define version-status
-  '((current-version . "0.2.0")
-    (target-version . "1.0.0")
-    (blockers-for-v1
-     ((must-have
-       "Elixir MCP server compiles and runs"
-       "Multi-platform submission works (GitHub, GitLab)"
-       "Network verification pre-flight checks"
-       "Credential rotation functional"
-       "Basic deduplication")
-      (should-have
-       "Bitbucket and Codeberg support"
-       "Post-submission verification"
-       "DNSSEC/DANE checks"
-       "Audit logging")
-      (nice-to-have
+  '((current-version . "1.0.0")
+    (target-version . "1.1.0")
+    (v1-status . "released")
+    (v1-release-date . "2025-12-11")
+    (v1-features
+     ((completed
+       "Elixir MCP server with OTP supervision"
+       "Multi-platform submission (GitHub, GitLab, Bitbucket, Codeberg)"
+       "Network verification (latency, DNS, TLS, BGP)"
+       "Credential rotation with CLI fallback"
+       "Deduplication with fuzzy matching"
+       "Comprehensive audit logging"
+       "MCP tool integration")
+      (v1.1-roadmap
        "Julia stats integration"
-       "ReScript UI"
+       "ReScript UI dashboard"
        "Oxigraph RDF store"
-       "SPARK-verified types")))
-    (estimated-completion . "60%")
-    (remaining-work
-     "Complete MCP tool registration"
-     "Test end-to-end submission flow"
-     "Add proper error handling"
-     "Write integration tests"
-     "Package for distribution")))
+       "IETF .well-known/feedback proposal")))))
 
 ;;; ============================================================
 ;;; TECH STACK DECISIONS
