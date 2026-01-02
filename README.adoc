@@ -1,6 +1,6 @@
 = feedback-a-tron
 
-image:https://img.shields.io/badge/license-AGPL--3.0-blue.svg[AGPL-3.0,link="https://www.gnu.org/licenses/agpl-3.0"] image:https://img.shields.io/badge/philosophy-Palimpsest-purple.svg[Palimpsest,link="https://github.com/hyperpolymath/palimpsest-licence"]
+image:[AGPL-3.0,link="https://www.gnu.org/licenses/agpl-3.0"] image:[Palimpsest,link="https://github.com/hyperpolymath/palimpsest-licence"]
 Jonathan D.A. Jewell <jonathan.jewell@gmail.com>
 v1.0.0, 2025-12-11
 :toc: macro
@@ -22,7 +22,7 @@ toc::[]
 
 == Overview
 
-FeedbackATron automates the submission of issues, bug reports, and feedback across multiple platforms simultaneously. It ensures submissions actually reach their destination through comprehensive network verification.
+Feedback-o-Tron automates the submission of issues, bug reports, and feedback across multiple platforms simultaneously. It ensures submissions actually reach their destination through comprehensive network verification.
 
 === Key Features
 
