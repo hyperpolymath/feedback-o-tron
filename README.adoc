@@ -4,7 +4,7 @@ image:https://img.shields.io/badge/License-MPL_2.0-blue.svg[MPL-2.0,link="https:
 image:https://img.shields.io/badge/Philosophy-Palimpsest-purple.svg[Palimpsest,link="https://github.com/hyperpolymath/palimpsest-licence"]
 
 
-image:[AGPL-3.0,link="https://www.gnu.org/licenses/agpl-3.0"] image:[Palimpsest,link="https://github.com/hyperpolymath/palimpsest-licence"]
+image:[PMPL-1.0,link="https://github.com/hyperpolymath/palimpsest-license"] image:[Palimpsest,link="https://github.com/hyperpolymath/palimpsest-licence"]
 Jonathan D.A. Jewell <jonathan.jewell@gmail.com>
 v1.0.0, 2025-12-11
 :toc: macro
@@ -174,7 +174,7 @@ Or use CLI tools (gh, glab) which are auto-detected.
 
 == License
 
-Licensed under AGPL-3.0-or-later OR LicenseRef-Palimpsest-0.5.
+Licensed under PMPL-1.0-or-later OR LicenseRef-Palimpsest-0.5.
 
 See link:LICENSE.txt[LICENSE.txt] for details.
 
