@@ -1,10 +1,10 @@
 = feedback-a-tron
 
-image:https://img.shields.io/badge/License-MPL_2.0-blue.svg[MPL-2.0,link="https://opensource.org/licenses/MPL-2.0"]
-image:https://img.shields.io/badge/Philosophy-Palimpsest-purple.svg[Palimpsest,link="https://github.com/hyperpolymath/palimpsest-licence"]
+image:https://img.shields.io/badge/License-PMPL--1.0-blue.svg[License: PMPL-1.0,link="https://github.com/hyperpolymath/palimpsest-license"]
+image:https://img.shields.io/badge/Philosophy-Palimpsest-indigo.svg[Palimpsest,link="https://github.com/hyperpolymath/palimpsest-license"]
 
 
-image:[PMPL-1.0,link="https://github.com/hyperpolymath/palimpsest-license"] image:[Palimpsest,link="https://github.com/hyperpolymath/palimpsest-licence"]
+image:[PMPL-1.0,link="https://github.com/hyperpolymath/palimpsest-license"] image:[Palimpsest,link="https://github.com/hyperpolymath/palimpsest-license"]
 Jonathan D.A. Jewell <jonathan.jewell@gmail.com>
 v1.0.0, 2025-12-11
 :toc: macro
@@ -181,3 +181,14 @@ See link:LICENSE.txt[LICENSE.txt] for details.
 == Contributing
 
 See link:CONTRIBUTING.adoc[CONTRIBUTING.adoc].
+
+== OPSM Link
+
+[source]
+----
+OPSM Core
+  |
+  v
+feedback-o-tron (feedback/telemetry capture for OPSM (opt‑in))
+
+----
