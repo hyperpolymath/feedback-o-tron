@@ -51,6 +51,19 @@ mix deps.get
 mix run --no-halt
 ----
 
+== Current Status (2026-01-27)
+
+* MCP server now supports optional TCP (line-delimited JSON-RPC) alongside stdio.
+* TCP smoke test script: `elixir-mcp/scripts/mcp_tcp_smoke_test.sh` (defaults to `127.0.0.1:844`).
+* Systemd unit can run as user or system service; privileged port `844` requires system service or `setcap`.
+
+Next:
+
+* Validate the TCP listener with the smoke test and decide whether to keep `844` or move to an unprivileged port.
+* If exposing outside localhost, confirm firewall rules and decide on TLS termination/SSH tunneling.
+
+
+
 == Usage
 
 === As Elixir Library

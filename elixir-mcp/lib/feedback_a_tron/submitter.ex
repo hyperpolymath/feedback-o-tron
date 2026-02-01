@@ -241,8 +241,12 @@ defmodule FeedbackATron.Submitter do
   defp check_rate_limit(state, platform) do
     case Map.get(state.rate_limits, platform) do
       nil -> :ok
-      %{remaining: 0, resets_at: reset} when reset > DateTime.utc_now() ->
-        {:error, :rate_limited}
+      %{remaining: 0, resets_at: reset} ->
+        if DateTime.compare(reset, DateTime.utc_now()) == :gt do
+          {:error, :rate_limited}
+        else
+          :ok
+        end
       _ -> :ok
     end
   end

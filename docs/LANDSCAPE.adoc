@@ -268,6 +268,7 @@ TM Forum has TMF621 (Trouble Ticket Management API). We should align with this f
 - [x] Credential rotation
 - [x] Network verification
 - [x] MCP tool integration
+- [x] MCP TCP adapter + smoke test script (2026-01-27)
 
 === Phase 2: Intelligence
 - [ ] Semantic deduplication (Datalog engine)

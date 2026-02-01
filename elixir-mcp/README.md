@@ -5,6 +5,7 @@
 ## Features
 
 - **MCP Integration** — Use with Claude for intelligent issue management
+- **Elixir MCP Server** — JSON-RPC 2.0 over stdio via elixir-mcp-server
 - **Datalog Analysis** — Derive relationships, detect patterns, find regressions
 - **Multi-Repo Scraping** — Track many repositories with rate limiting
 - **Change Subscriptions** — Webhooks + polling for real-time updates
@@ -31,11 +32,20 @@ nickel export config/local.ncl --format json > config/config.json
 export GITHUB_TOKEN=ghp_xxxx
 
 # Run MCP server (for Claude integration)
-mix run --no-halt -- --mcp-server
+FEEDBACK_A_TRON_MCP=1 mix run --no-halt -- --mcp-server
 
 # Or build escript
 mix escript.build
 ./gh-manage --mcp-server
+
+# Optional: expose MCP over TCP (line-delimited JSON-RPC)
+# Bind defaults to 127.0.0.1:7979; set FEEDBACK_A_TRON_MCP_TCP_BIND=0.0.0.0 for all interfaces
+FEEDBACK_A_TRON_MCP=1 FEEDBACK_A_TRON_MCP_TCP=1 \
+  FEEDBACK_A_TRON_MCP_TCP_PORT=7979 FEEDBACK_A_TRON_MCP_TCP_BIND=127.0.0.1 \
+  mix run --no-halt -- --mcp-server
+
+# TCP smoke test (defaults to 127.0.0.1:844)
+MCP_PORT=844 scripts/mcp_tcp_smoke_test.sh
 ```
 
 ## Usage

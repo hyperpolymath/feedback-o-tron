@@ -6,9 +6,10 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
   and feedback to configured platforms.
   """
 
-  @behaviour FeedbackATron.MCP.Tool
+  use ElixirMcpServer.Tool
 
   alias FeedbackATron.Submitter
+  require Logger
 
   @impl true
   def name, do: "submit_feedback"
@@ -68,7 +69,7 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
   end
 
   @impl true
-  def call(params) do
+  def execute(params, _context) do
     issue = %{
       title: params["title"],
       body: params["body"],
@@ -84,17 +85,35 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
 
     case Submitter.submit(issue, opts) do
       {:ok, submission_id, results} ->
-        format_results(submission_id, results)
+        formatted = format_results(submission_id, results)
+        text = format_text(formatted)
+        {:ok, [%{type: "text", text: text}]}
       {:error, reason} ->
-        %{error: inspect(reason)}
+        Logger.error("MCP submit_feedback failed: #{inspect(reason)}")
+        {:error, reason}
     end
+  rescue
+    exception ->
+      Logger.error("MCP submit_feedback exception: #{Exception.message(exception)}")
+      {:error, exception}
   end
 
   defp parse_platforms(nil), do: [:github]
   defp parse_platforms(platforms) when is_list(platforms) do
     platforms
-    |> Enum.map(&String.to_existing_atom/1)
-    |> Enum.filter(&(&1 in [:github, :gitlab, :bitbucket, :codeberg, :email]))
+    |> Enum.map(&platform_atom/1)
+    |> Enum.filter(& &1)
+  end
+
+  defp platform_atom(platform) do
+    case platform do
+      "github" -> :github
+      "gitlab" -> :gitlab
+      "bitbucket" -> :bitbucket
+      "codeberg" -> :codeberg
+      "email" -> :email
+      _ -> nil
+    end
   end
 
   defp format_results(submission_id, results) do
@@ -107,6 +126,10 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
         %{platform: platform, status: "error", error: inspect(error)}
       {:error, {:duplicate_found, similar}} ->
         %{status: "skipped", reason: "duplicate", similar_issues: similar}
+      {:error, {:similar_found, matches}} ->
+        %{status: "skipped", reason: "similar_found", similar_issues: matches}
+      {:error, other} ->
+        %{status: "error", error: inspect(other)}
     end)
 
     %{
@@ -123,5 +146,10 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
     dry_run = Enum.count(results, &(&1.status == "dry_run"))
 
     "Submitted: #{success}, Errors: #{errors}, Skipped: #{skipped}, Dry run: #{dry_run}"
+  end
+
+  defp format_text(payload) do
+    json = Jason.encode!(payload)
+    "#{payload.summary}\n\n#{json}"
   end
 end

@@ -239,8 +239,8 @@ defmodule FeedbackATron.Deduplicator do
     s2_len = String.length(s2)
 
     if s1_len == 0, do: s2_len,
-    else: if s2_len == 0, do: s1_len,
-    else: do_levenshtein(String.graphemes(s1), String.graphemes(s2), s1_len, s2_len)
+    else: (if s2_len == 0, do: s1_len,
+    else: do_levenshtein(String.graphemes(s1), String.graphemes(s2), s1_len, s2_len))
   end
 
   defp do_levenshtein(s1, s2, len1, len2) do

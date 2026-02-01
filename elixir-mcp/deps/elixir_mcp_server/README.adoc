@@ -1,0 +1,141 @@
+= elixir-mcp-server
+
+**Model Context Protocol (MCP) server framework for Elixir/BEAM**
+
+A complete, production-ready implementation of the https://modelcontextprotocol.io[Model Context Protocol] that enables Elixir applications to integrate with Claude Code and other MCP clients.
+
+== Features
+
+* ✅ Complete JSON-RPC 2.0 protocol implementation
+* ✅ stdio transport (MCP standard)
+* ✅ Tool registration and execution
+* ✅ Resource serving (planned)
+* ✅ Prompt templates (planned)
+* ✅ Server capabilities negotiation
+* ✅ Type-safe tool definitions via behaviors
+* ✅ OTP supervision for reliability
+
+== Installation
+
+Add `elixir_mcp_server` to your `mix.exs` dependencies:
+
+[source,elixir]
+----
+def deps do
+  [
+    {:elixir_mcp_server, "~> 0.1.0"}
+  ]
+end
+----
+
+== Quick Start
+
+=== Define a Tool
+
+[source,elixir]
+----
+defmodule MyApp.Tools.Echo do
+  use ElixirMcpServer.Tool
+
+  @impl true
+  def name, do: "echo"
+
+  @impl true
+  def description, do: "Echoes back the input message"
+
+  @impl true
+  def input_schema do
+    %{
+      type: "object",
+      properties: %{
+        message: %{type: "string", description: "Message to echo"}
+      },
+      required: ["message"]
+    }
+  end
+
+  @impl true
+  def execute(%{"message" => msg}, _context) do
+    {:ok, [%{type: "text", text: "Echo: #{msg}"}]}
+  end
+end
+----
+
+=== Start the Server
+
+[source,elixir]
+----
+ElixirMcpServer.start_link(
+  name: "my-app",
+  version: "1.0.0",
+  tools: [MyApp.Tools.Echo]
+)
+----
+
+=== Configure Claude Code
+
+Add to your `.claude.json`:
+
+[source,json]
+----
+{
+  "mcpServers": {
+    "my-app": {
+      "command": "mix",
+      "args": ["run", "--no-halt"],
+      "env": {}
+    }
+  }
+}
+----
+
+== Use Cases
+
+This framework is useful for:
+
+* **feedback-o-tron** - Automated feedback submission with network verification
+* **Observatory** - GitHub intelligence and issue management
+* **NeuroPhone** - Elixir/Phoenix applications
+* **Any Elixir service** that wants Claude Code integration
+
+== Architecture
+
+[source]
+----
+┌─────────────────────────────────────┐
+│   MCP Client (Claude Code, etc.)    │
+└─────────────────┬───────────────────┘
+                  │ JSON-RPC 2.0 / stdio
+┌─────────────────▼───────────────────┐
+│    ElixirMcpServer.Server           │
+│    (GenServer, protocol handling)   │
+└─────────────────┬───────────────────┘
+                  │
+    ┌─────────────┼─────────────┐
+    │             │             │
+┌───▼───┐    ┌───▼────┐   ┌───▼──────┐
+│ Tools │    │Resources│   │ Prompts  │
+│(your) │    │ (your)  │   │  (your)  │
+└───────┘    └─────────┘   └──────────┘
+----
+
+== Documentation
+
+* link:https://hexdocs.pm/elixir_mcp_server[API Documentation]
+* link:CHANGELOG.md[Changelog]
+* link:SECURITY.md[Security Policy]
+
+== License
+
+PMPL-1.0-or-later - see link:LICENSE[LICENSE] file for details
+
+== OPSM Link
+
+[source]
+----
+OPSM Core
+  |
+  v
+elixir-mcp-server (Elixir tooling bridge for OPSM)
+
+----

@@ -31,11 +31,15 @@ defmodule FeedbackATron.MixProject do
 
   defp deps do
     [
+      # MCP server framework
+      {:elixir_mcp_server, "~> 0.1.0"},
+
       # HTTP client
       {:req, "~> 0.5"},
 
       # JSON
       {:jason, "~> 1.4"},
+      {:yaml_elixir, "~> 2.9"},
 
       # CLI argument parsing
       {:optimus, "~> 0.5"},

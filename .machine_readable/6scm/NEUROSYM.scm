@@ -1,8 +1,9 @@
-;; SPDX-License-Identifier: MPL-2.0
+;; SPDX-License-Identifier: PMPL-1.0-or-later
 ;; NEUROSYM.scm - Neurosymbolic config
 
 (define neurosym-config
-  `((version . "1.0.0")
+  `((version . "1.0.1")
+    (updated . "2026-01-27")
     (symbolic-layer
       ((type . "scheme")
        (reasoning . "deductive")))
