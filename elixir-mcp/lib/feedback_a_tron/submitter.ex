@@ -23,7 +23,7 @@ defmodule FeedbackATron.Submitter do
 
   alias FeedbackATron.{Credentials, Deduplicator, AuditLog}
 
-  @platforms [:github, :gitlab, :bitbucket, :codeberg, :email]
+  @platforms [:github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email]
 
   # Client API
 
@@ -216,6 +216,44 @@ defmodule FeedbackATron.Submitter do
         {:error, %{platform: :codeberg, status: status, error: error}}
       {:error, reason} ->
         {:error, %{platform: :codeberg, error: reason}}
+    end
+  end
+
+  defp do_submit(:bugzilla, issue, cred, opts) do
+    # Bugzilla REST API v1
+    base_url = opts[:bugzilla_url] || cred.base_url || "https://bugzilla.redhat.com"
+    product = issue.repo  # For Bugzilla, "repo" is the product name (e.g., "Fedora")
+
+    # Default component/version if not specified
+    component = opts[:component] || "KDE"
+    version = opts[:version] || "43"
+
+    body = Jason.encode!(%{
+      product: product,
+      component: component,
+      version: version,
+      summary: issue.title,
+      description: issue.body,
+      op_sys: "Linux",
+      platform: "x86_64",
+      severity: opts[:severity] || "medium"
+    })
+
+    headers = [
+      {"Authorization", "Bearer #{cred.token}"},
+      {"Content-Type", "application/json"}
+    ]
+
+    url = "#{base_url}/rest/bug"
+
+    case Req.post(url, body: body, headers: headers) do
+      {:ok, %{status: 200, body: resp}} when is_map(resp) ->
+        bug_id = resp["id"]
+        {:ok, %{platform: :bugzilla, url: "#{base_url}/show_bug.cgi?id=#{bug_id}", bug_id: bug_id}}
+      {:ok, %{status: status, body: error}} ->
+        {:error, %{platform: :bugzilla, status: status, error: error}}
+      {:error, reason} ->
+        {:error, %{platform: :bugzilla, error: reason}}
     end
   end
 

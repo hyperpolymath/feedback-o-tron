@@ -216,7 +216,7 @@ defmodule FeedbackATron.AuditLog do
     IO.write(state.log_handle, line)
 
     # Also log to console in dev
-    if Mix.env() == :dev do
+    if Application.get_env(:feedback_a_tron, :env) == :dev do
       Logger.debug("[AUDIT] #{event_type}: #{inspect(data)}")
     end
 

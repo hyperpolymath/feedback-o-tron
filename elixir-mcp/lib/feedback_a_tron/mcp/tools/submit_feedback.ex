@@ -46,7 +46,7 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
           type: "array",
           items: %{
             type: "string",
-            enum: ["github", "gitlab", "bitbucket", "codeberg", "email"]
+            enum: ["github", "gitlab", "bitbucket", "codeberg", "bugzilla", "email"]
           },
           description: "Platforms to submit to (default: github)"
         },
@@ -111,6 +111,7 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
       "gitlab" -> :gitlab
       "bitbucket" -> :bitbucket
       "codeberg" -> :codeberg
+      "bugzilla" -> :bugzilla
       "email" -> :email
       _ -> nil
     end
