@@ -81,7 +81,9 @@ defmodule FeedbackATron.CLI do
         platforms: platforms,
         labels: Keyword.get(opts, :labels, []),
         dry_run: Keyword.get(opts, :dry_run, false),
-        repo: Keyword.get(opts, :repo)
+        repo: Keyword.get(opts, :repo),
+        component: Keyword.get(opts, :component),
+        version: Keyword.get(opts, :bug_version)
       ]
       {:ok, issue, submit_opts}
     end
@@ -121,6 +123,14 @@ defmodule FeedbackATron.CLI do
 
   defp parse_flags(["--dry-run" | rest], acc) do
     parse_flags(rest, [{:dry_run, true} | acc])
+  end
+
+  defp parse_flags(["--component", component | rest], acc) do
+    parse_flags(rest, [{:component, component} | acc])
+  end
+
+  defp parse_flags(["--version", version | rest], acc) do
+    parse_flags(rest, [{:bug_version, version} | acc])
   end
 
   defp parse_flags([unknown | _], _acc) do
@@ -173,6 +183,8 @@ defmodule FeedbackATron.CLI do
         --platform NAME     Target platform (github, gitlab, bitbucket, codeberg, bugzilla, email)
                             Can be specified multiple times for multi-platform submission
         --label LABEL       Apply label (can specify multiple)
+        --component NAME    Bugzilla component (e.g., "maliit-keyboard", "plasma-desktop")
+        --version VER       Bugzilla version (e.g., "43", "rawhide")
         --dry-run           Show what would be submitted without actually submitting
 
     PLATFORMS:

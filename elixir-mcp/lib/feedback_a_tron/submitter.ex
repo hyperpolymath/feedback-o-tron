@@ -224,9 +224,9 @@ defmodule FeedbackATron.Submitter do
     base_url = opts[:bugzilla_url] || cred.base_url || "https://bugzilla.redhat.com"
     product = issue.repo  # For Bugzilla, "repo" is the product name (e.g., "Fedora")
 
-    # Default component/version if not specified
-    component = opts[:component] || "KDE"
-    version = opts[:version] || "43"
+    # Component/version from opts or defaults
+    component = opts[:component] || "distribution"  # Generic component
+    version = opts[:version] || "rawhide"  # Use rawhide for development version
 
     body = Jason.encode!(%{
       product: product,

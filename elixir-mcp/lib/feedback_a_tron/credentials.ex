@@ -13,9 +13,9 @@ defmodule FeedbackATron.Credentials do
 
   require Logger
 
-  @platforms [:github, :gitlab, :bitbucket, :codeberg]
+  @platforms [:github, :gitlab, :bitbucket, :codeberg, :bugzilla]
 
-  defstruct [:github, :gitlab, :bitbucket, :codeberg, :email]
+  defstruct [:github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email]
 
   @doc """
   Load credentials from all available sources.
@@ -26,6 +26,7 @@ defmodule FeedbackATron.Credentials do
       gitlab: load_gitlab_creds(),
       bitbucket: load_bitbucket_creds(),
       codeberg: load_codeberg_creds(),
+      bugzilla: load_bugzilla_creds(),
       email: load_email_config()
     }
   end
@@ -123,6 +124,25 @@ defmodule FeedbackATron.Credentials do
       nil -> []
       token -> [%{source: :env, token: token}]
     end
+  end
+
+  # Bugzilla: API key from env
+  defp load_bugzilla_creds do
+    creds = []
+
+    creds = case System.get_env("BUGZILLA_API_KEY") do
+      nil -> creds
+      token -> [%{source: :env, token: token, base_url: System.get_env("BUGZILLA_URL", "https://bugzilla.redhat.com")} | creds]
+    end
+
+    # Also support username/password auth
+    creds = case {System.get_env("BUGZILLA_USERNAME"), System.get_env("BUGZILLA_PASSWORD")} do
+      {nil, _} -> creds
+      {_, nil} -> creds
+      {user, pass} -> [%{source: :env, username: user, password: pass, base_url: System.get_env("BUGZILLA_URL", "https://bugzilla.redhat.com")} | creds]
+    end
+
+    creds
   end
 
   # Email: SMTP config

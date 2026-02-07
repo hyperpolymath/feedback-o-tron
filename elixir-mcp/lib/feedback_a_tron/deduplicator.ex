@@ -198,11 +198,18 @@ defmodule FeedbackATron.Deduplicator do
   end
 
   defp normalize_body(body) do
-    body
+    normalized = body
     |> String.downcase()
     |> String.replace(~r/\s+/, " ")
     |> String.trim()
-    |> binary_part(0, min(500, byte_size(body)))  # Only hash first 500 chars
+
+    # Take first 500 bytes safely (after normalization)
+    size = byte_size(normalized)
+    if size > 500 do
+      binary_part(normalized, 0, 500)
+    else
+      normalized
+    end
   end
 
   defp find_similar_titles(title, title_index) do
