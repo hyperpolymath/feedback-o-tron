@@ -1,15 +1,212 @@
+# AI Manifest for feedback-o-tron
+# Media-Type: application/vnd.hyperpolymath.ai-manifest+a2ml
+# Version: 1.0.0
+# Updated: 2026-02-07
 
-# AI Assistant Instructions
+## Repository Overview
 
-## Repository Focus
-- `rsr-template-repo` is treated as a Rhodium Standard Repository; obey the Rhodium policies, maintain `.bot_directives`, and keep `.machines_readable/6scm/` authoritative.
-- Prefer to keep generated files out of source control, and regenerate them with the documented commands before committing.
+**feedback-o-tron** is a production-ready autonomous bug reporting system for AI agents.
 
-## Workflow
-1. Inspect `.machines_readable/6scm/STATE.scm` for blockers and next actions.
-2. Respect any constraints listed inside `.machines_readable/6scm/AGENTIC.scm` when tooling changes are requested.
-3. After finishing edits, update STATE with your outcomes and commit with a concise, imperative message.
+- **Status**: Production (v1.0.0) - Validated with 2 real Bugzilla submissions
+- **Language**: Elixir (BEAM VM)
+- **Platforms**: GitHub, GitLab, Bitbucket, Codeberg, Bugzilla, Email
+- **Integration**: MCP server for Claude Code, standalone CLI escript
+- **Formal Verification**: Idris2 ABI definitions with dependent type proofs
 
-## Delivery Promises
-- Mention in summaries whether STATE, `contractiles/`, or `.bot_directives/` changed.
-- Keep this file in sync with the repository’s status; update it if the governance changes.
+## Canonical File Locations (CRITICAL INVARIANTS)
+
+### MANDATORY: SCM Files Location
+**ALL** machine-readable state files MUST be in `.machine_readable/` directory ONLY:
+
+```
+.machine_readable/
+├── STATE.scm          # Current project state (100% complete)
+├── META.scm           # Meta-level information
+├── ECOSYSTEM.scm      # Ecosystem relationships
+├── AGENTIC.scm        # AI agent policies
+├── NEUROSYM.scm       # Neurosymbolic integration
+└── PLAYBOOK.scm       # Standard operating procedures
+```
+
+**NEVER** create STATE.scm, META.scm, ECOSYSTEM.scm, AGENTIC.scm, NEUROSYM.scm, or PLAYBOOK.scm in the repository root.
+
+### Source Code Structure
+
+```
+elixir-mcp/
+├── lib/feedback_a_tron/
+│   ├── cli.ex              # Main entry point (escript)
+│   ├── submitter.ex        # Multi-platform submission
+│   ├── deduplicator.ex     # Fuzzy matching, Levenshtein
+│   ├── credentials.ex      # Multi-source credential loading
+│   ├── audit_log.ex        # JSON-lines event logging
+│   └── mcp/
+│       └── server.ex       # MCP protocol server
+├── test/                   # 26/26 tests passing
+└── mix.exs                 # Build configuration
+
+src/abi/                    # Idris2 formal verification
+├── Types.idr               # ABI type definitions with proofs
+├── Layout.idr              # Memory layout correctness
+└── Foreign.idr             # FFI declarations
+
+ffi/zig/                    # C ABI bridge (future)
+└── src/main.zig
+```
+
+### Documentation
+
+```
+README.adoc                 # Comprehensive usage guide
+CONTRIBUTING.adoc           # Contribution guidelines
+SECURITY.md                 # Security policy
+LICENSE.txt                 # PMPL-1.0-or-later
+```
+
+## Critical Invariants
+
+1. **Production Status**: This is a PRODUCTION system. Real bugs have been filed. Changes must maintain stability.
+
+2. **Platform Support**: Must support all 6 platforms (GitHub, GitLab, Bitbucket, Codeberg, Bugzilla, Email). Do not remove any.
+
+3. **Bugzilla Specifics**: Bugzilla requires `--component` and `--version` flags. These must be exposed in CLI and MCP interface.
+
+4. **Credential Loading Order**:
+   - Environment variables (highest priority)
+   - CLI configs (~/.config/gh/hosts.yml, ~/.config/glab-cli/config.yml)
+   - Never hardcode credentials
+
+5. **Deduplication**: Normalize body BEFORE slicing to avoid binary_part errors. This was a production bug.
+
+6. **Audit Logging**: ALL operations must be logged. Event types: :submission, :submission_success, :submission_error.
+
+7. **No Mix.env() in Escript**: Use `Application.get_env(:feedback_a_tron, :env)` instead. Mix module not available in compiled escript.
+
+8. **Idris2 ABI**: Type definitions in src/abi/ are formal specifications. Changes must maintain dependent type proofs.
+
+## Lifecycle Hooks
+
+### on-enter (Session Start)
+
+1. Read `.machine_readable/STATE.scm` to understand current completion status (100%)
+2. Check `elixir-mcp/` for any uncommitted changes
+3. Review recent session history in STATE.scm
+4. Note production status: Real bugs filed to Bugzilla
+
+### on-exit (Session End)
+
+1. Update STATE.scm with session achievements
+2. Commit changes with clear message: "docs: update X" or "fix: resolve Y"
+3. Run tests if code changed: `cd elixir-mcp && mix test`
+4. Update audit if new platforms or features added
+
+## Development Guidelines
+
+### Adding New Platforms
+
+1. Add platform atom to `@platforms` in submitter.ex
+2. Implement `do_submit/4` function for platform
+3. Add credential loading in credentials.ex
+4. Update CLI parser for platform-specific flags
+5. Add tests in test/submitter_test.exs
+6. Update README.adoc with usage examples
+7. Update STATE.scm completion status
+
+### Testing
+
+- Unit tests: `mix test`
+- Integration: `./feedback-a-tron submit --dry-run ...`
+- Real submission: Use test repos, not production
+
+### Bug Fixes
+
+- Check STATE.scm session history for similar issues
+- Add test case reproducing bug
+- Fix implementation
+- Verify all 26 tests still pass
+- Update STATE.scm with bug fix note
+
+## Integration Points
+
+### MCP Server (Claude Code)
+
+Configure in `~/.config/claude/mcp_servers.json`:
+
+```json
+{
+  "feedback-o-tron": {
+    "command": "/path/to/feedback-a-tron",
+    "args": ["--mcp-server"],
+    "env": {
+      "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+      "BUGZILLA_API_KEY": "${BUGZILLA_API_KEY}"
+    }
+  }
+}
+```
+
+### Standalone CLI
+
+```bash
+./feedback-a-tron submit --repo "..." --title "..." --body "..." --platform bugzilla --component "..." --version "..."
+```
+
+### As Library
+
+```elixir
+FeedbackATron.Submitter.submit(%{
+  title: "Bug title",
+  body: "Description",
+  repo: "owner/repo"
+}, platforms: [:github, :bugzilla])
+```
+
+## Real-World Validation
+
+**Production bugs filed on 2026-02-07:**
+
+1. Bug #2437503: maliit-keyboard crash loop (SIGABRT)
+   - https://bugzilla.redhat.com/show_bug.cgi?id=2437503
+   - Component: maliit-keyboard, Version: 43
+
+2. Bug #2437504: xwaylandvideobridge portal error
+   - https://bugzilla.redhat.com/show_bug.cgi?id=2437504
+   - Component: plasma-desktop, Version: 43
+
+Both submissions validated end-to-end workflow including:
+- Crash detection from journalctl
+- Bug report formatting
+- Bugzilla REST API submission
+- Audit log recording
+
+## Dependencies
+
+**Runtime:**
+- Elixir 1.15+
+- Erlang/OTP 26+
+- Jason (JSON encoding)
+- Req (HTTP client)
+- YamlElixir (CLI config parsing)
+
+**Build:**
+- mix escript.build (generates standalone binary)
+
+**Optional:**
+- Idris2 (for ABI verification)
+- Zig (for FFI bridge)
+- proven repo (90+ formally verified modules)
+
+## Next Steps (Post-Production)
+
+1. **Proven Integration**: Use SafeMath, SafeString, SafeJSON from proven repo
+2. **ML Deduplication**: Enhance fuzzy matching with semantic embeddings
+3. **MCP Tool Schema**: Expose component/version options in MCP tool definition
+4. **Email Platform**: Complete Swoosh SMTP integration
+5. **Multi-repo Batch**: Add batch mode for analyzing multiple repos
+
+## License
+
+PMPL-1.0-or-later (Palimpsest License)
+
+All original code is licensed under PMPL-1.0-or-later.
+Third-party dependencies maintain their original licenses.
