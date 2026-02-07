@@ -31,6 +31,7 @@ defmodule FeedbackATron.AuditLog do
 
   # Event types
   @event_types [
+    :submission,
     :submission_attempt,
     :submission_success,
     :submission_failure,
