@@ -13,7 +13,7 @@ defmodule FeedbackATron.Credentials do
 
   require Logger
 
-  @platforms [:github, :gitlab, :bitbucket, :codeberg, :bugzilla]
+
 
   defstruct [:github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email]
 

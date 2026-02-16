@@ -250,7 +250,7 @@ defmodule FeedbackATron.Deduplicator do
     else: do_levenshtein(String.graphemes(s1), String.graphemes(s2), s1_len, s2_len))
   end
 
-  defp do_levenshtein(s1, s2, len1, len2) do
+  defp do_levenshtein(s1, s2, _len1, len2) do
     # Dynamic programming approach
     row = 0..len2 |> Enum.to_list()
 

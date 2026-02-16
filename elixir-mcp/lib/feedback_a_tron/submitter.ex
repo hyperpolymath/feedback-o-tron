@@ -23,7 +23,7 @@ defmodule FeedbackATron.Submitter do
 
   alias FeedbackATron.{Credentials, Deduplicator, AuditLog}
 
-  @platforms [:github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email]
+
 
   # Client API
 
@@ -260,18 +260,18 @@ defmodule FeedbackATron.Submitter do
   defp do_submit(:email, issue, cred, opts) do
     to = opts[:email_to] || cred.default_recipient
 
-    email = %{
+    _email = %{
       to: to,
       from: cred.from_address,
       subject: issue.title,
       body: issue.body
     }
 
-    # Use Swoosh or similar
-    case Mailer.deliver(email) do
-      {:ok, _} -> {:ok, %{platform: :email, sent_to: to}}
-      {:error, reason} -> {:error, %{platform: :email, error: reason}}
-    end
+    # Email submission is not fully implemented without a Mailer library like Swoosh.
+    # Returning an error to indicate this.
+    Logger.warning("Attempted email submission, but Mailer.deliver/1 is not implemented.",
+      issue: issue.title, recipient: opts[:email_to] || cred.default_recipient)
+    {:error, %{platform: :email, error: :not_implemented, reason: "Mailer library not configured or missing."}}
   end
 
   # Helpers

@@ -16,13 +16,7 @@ defmodule FeedbackATron.NetworkVerifier do
   use GenServer
   require Logger
 
-  alias FeedbackATron.NetworkVerifier.{
-    PathAnalyzer,
-    DNSVerifier,
-    TLSVerifier,
-    ResponseVerifier,
-    RouteAnalyzer
-  }
+  alias FeedbackATron.NetworkVerifier.{DNSVerifier, TLSVerifier, RouteAnalyzer}
 
   defstruct [
     :target_host,
@@ -90,7 +84,7 @@ defmodule FeedbackATron.NetworkVerifier do
   end
 
   @impl true
-  def handle_call({:preflight, target_url, opts}, _from, state) do
+  def handle_call({:preflight, target_url, _opts}, _from, state) do
     uri = URI.parse(target_url)
     host = uri.host
 
@@ -265,7 +259,7 @@ defmodule FeedbackATron.NetworkVerifier do
     end
   end
 
-  defp check_certificate_transparency(host) do
+  defp check_certificate_transparency(_host) do
     # Query CT logs for certificate
     # Simplified - in production use CT API
     %{status: :not_implemented, note: "Requires CT log API integration"}
@@ -281,7 +275,7 @@ defmodule FeedbackATron.NetworkVerifier do
     end
   end
 
-  defp check_rpki_validity(host) do
+  defp check_rpki_validity(_host) do
     # Check if route origin is RPKI-valid
     # Requires access to RPKI validator or routinator
     %{status: :not_implemented, note: "Requires RPKI validator"}
@@ -296,8 +290,7 @@ defmodule FeedbackATron.NetworkVerifier do
     case extract_platform_and_id(target_url, submission_id) do
       {:github, owner, repo, issue_number} ->
         verify_github_issue(owner, repo, issue_number)
-      {:gitlab, project, issue_id} ->
-        verify_gitlab_issue(project, issue_id)
+
       _ ->
         %{status: :unknown_platform}
     end
@@ -332,9 +325,7 @@ defmodule FeedbackATron.NetworkVerifier do
     end
   end
 
-  defp verify_gitlab_issue(_project, _issue_id) do
-    %{status: :not_implemented}
-  end
+
 end
 
 defmodule FeedbackATron.NetworkVerifier.DNSVerifier do
@@ -431,17 +422,17 @@ defmodule FeedbackATron.NetworkVerifier.RouteAnalyzer do
     end
   end
 
-  def verify_bgp_origin(host) do
+  def verify_bgp_origin(_host) do
     # Would require BGP looking glass or RPKI validator
     %{status: :not_implemented, note: "Requires BGP/RPKI integration"}
   end
 
-  defp lookup_asn(ip) do
+  defp lookup_asn(_ip) do
     # Use Team Cymru or similar
     %{status: :not_implemented}
   end
 
-  defp lookup_geo(ip) do
+  defp lookup_geo(_ip) do
     # Use MaxMind or similar
     %{status: :not_implemented}
   end

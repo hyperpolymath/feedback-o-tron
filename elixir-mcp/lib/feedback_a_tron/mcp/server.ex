@@ -119,14 +119,14 @@ defmodule FeedbackATron.MCP.Server do
     cond do
       Enum.member?(binds, "0.0.0.0") ->
         if length(binds) > 1 do
-          Logger.warn("MCP TCP bind includes 0.0.0.0; ignoring other bind addresses")
+          Logger.warning("MCP TCP bind includes 0.0.0.0; ignoring other bind addresses", [])
         end
 
         ["0.0.0.0"]
 
       Enum.member?(binds, "::") ->
         if length(binds) > 1 do
-          Logger.warn("MCP TCP bind includes ::; ignoring other bind addresses")
+          Logger.warning("MCP TCP bind includes ::; ignoring other bind addresses", [])
         end
 
         ["::"]
