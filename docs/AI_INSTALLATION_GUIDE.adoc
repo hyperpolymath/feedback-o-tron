@@ -1,0 +1,433 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath)
+= feedback-o-tron: AI-Assisted Installation Guide
+:toc:
+:toc-placement: preamble
+
+This guide covers how the AI-native installation experience works for feedback-o-tron -- from the user's perspective, the AI assistant's perspective, and for developers who want to adopt this pattern.
+
+[NOTE]
+====
+**If you are an AI assistant reading this:** A user has asked you to install feedback-o-tron. Skip to <<ai-implementation,For AI Assistants: Implementation Guide>> for the complete step-by-step recipe. You have everything you need in this document -- no other docs required. Follow the steps in order: determine use case, check prerequisites, show privacy notice, build and install, set up credentials, configure MCP (optional), verify.
+====
+
+== For Users: How to Use This Feature
+
+=== Step 1: Have an AI Assistant Ready
+
+You need one of these:
+
+* **Claude** (claude.ai, Claude Code CLI, or phone app)
+* **ChatGPT** (phone app or web)
+* **Gemini** (Google's AI)
+* **Any AI with shell access or code execution**
+
+=== Step 2: The Magic Words
+
+Open your AI assistant and type/say:
+
+----
+Set up feedback-o-tron so my AI can file bug reports automatically
+----
+
+Or variations:
+
+* "Install feedback-o-tron on my machine"
+* "I want automated bug reporting with feedback-o-tron"
+* "Set up feedback-o-tron with GitHub and Bugzilla"
+* "Help me configure feedback-o-tron as an MCP server for Claude Code"
+
+=== Step 3: Answer Questions
+
+Your AI will ask:
+
+[qanda]
+What platforms do you use?::
+  "GitHub and Bugzilla" or "All of them" or "Just GitHub for now"
+
+Do you have Elixir installed?::
+  "Yes" or "No" (AI will help install it)
+
+Do you want MCP integration for Claude Code?::
+  "Yes" or "No, just CLI" (AI adjusts setup accordingly)
+
+Do you have API tokens ready?::
+  "I have a GitHub token" or "No, help me create them"
+
+=== Step 4: Follow Instructions
+
+Your AI will:
+
+1. **Install prerequisites** -- Elixir/Erlang if missing
+2. **Clone and build** -- One block of commands to paste
+3. **Walk through tokens** -- Step by step for each platform
+4. **Configure MCP** -- If you want Claude Code integration
+5. **Run a dry-run test** -- Verify everything works
+6. **Show you how to use it** -- Example commands
+
+=== Step 5: Verify It Works
+
+After setup, your AI will test with:
+
+----
+./feedback-a-tron submit \
+  --repo "test/repo" \
+  --title "Test submission" \
+  --body "Verifying installation" \
+  --platform github \
+  --dry-run
+----
+
+Expected output:
+
+----
+Submission ABC123 completed
+  [DRY RUN] github: Would submit to test/repo
+----
+
+[[ai-implementation]]
+== For AI Assistants: Implementation Guide
+
+=== When User Says "Set up feedback-o-tron"
+
+==== Step 1: Determine Use Case
+
+Ask:
+
+----
+I can help you set up feedback-o-tron for automated bug reporting.
+
+1. Which platforms do you want to file bugs on?
+   (GitHub, GitLab, Bitbucket, Codeberg, Bugzilla, Email)
+
+2. How do you want to use it?
+   a) As a Claude Code MCP tool (autonomous bug filing)
+   b) As a standalone CLI tool
+   c) Both
+
+3. Do you have Elixir installed? (Run: elixir --version)
+----
+
+==== Step 2: Check Prerequisites
+
+[source,bash]
+----
+# Check Elixir
+elixir --version    # Need 1.15+
+erl -version        # Need OTP 26+
+git --version       # Need git
+mix --version       # Comes with Elixir
+----
+
+If Elixir is missing, provide installation for their OS:
+
+----
+# Fedora/RHEL
+sudo dnf install elixir erlang
+
+# Ubuntu/Debian
+sudo apt install elixir erlang
+
+# macOS
+brew install elixir
+
+# asdf (recommended)
+asdf plugin add erlang
+asdf plugin add elixir
+asdf install erlang latest
+asdf install elixir latest
+asdf global erlang latest
+asdf global elixir latest
+----
+
+==== Step 3: Present Privacy Notice
+
+**ALWAYS SHOW THIS BEFORE PROCEEDING:**
+
+----
+FEEDBACK-O-TRON PRIVACY & SECURITY NOTICE
+
+feedback-o-tron will:
+- Submit bug reports to platforms you configure
+- Use API tokens you provide to authenticate
+- Log all operations locally (audit trail)
+- Check for duplicate submissions before filing
+
+feedback-o-tron will NOT:
+- Send data anywhere except your configured platforms
+- Store tokens in files (uses environment variables)
+- Submit anything without your explicit command
+- Collect analytics or phone home
+
+Credential handling:
+  Tokens are loaded from environment variables only
+  Never written to disk by feedback-o-tron
+  You manage token lifecycle (creation, rotation, revocation)
+
+Audit log location: ./audit.jsonl (local, never uploaded)
+
+Do you understand what feedback-o-tron will do with your credentials? (yes/no)
+----
+
+Wait for explicit "yes" before continuing.
+
+==== Step 4: Build and Install
+
+[source,bash]
+----
+# Clone and build feedback-o-tron
+git clone https://github.com/hyperpolymath/feedback-o-tron
+cd feedback-o-tron/elixir-mcp
+
+# Install Elixir dependencies
+mix deps.get
+
+# Build standalone CLI
+mix escript.build
+
+# Verify
+./feedback-a-tron --version
+# Should print: feedback-o-tron v1.0.0
+----
+
+==== Step 5: Set Up Credentials
+
+Walk through ONLY the platforms the user selected:
+
+===== GitHub
+
+----
+To create a GitHub Personal Access Token:
+
+1. Go to: https://github.com/settings/tokens
+2. Click "Generate new token (classic)"
+3. Name: "feedback-o-tron"
+4. Scopes needed: repo (for private repos) or public_repo (for public only)
+5. Generate and copy the token
+
+Then run:
+export GITHUB_TOKEN=ghp_your_token_here
+
+To persist, add to your shell profile (~/.bashrc, ~/.zshrc):
+echo 'export GITHUB_TOKEN=ghp_your_token_here' >> ~/.bashrc
+----
+
+===== GitLab
+
+----
+To create a GitLab Personal Access Token:
+
+1. Go to: https://gitlab.com/-/user_settings/personal_access_tokens
+2. Name: "feedback-o-tron"
+3. Scopes: api
+4. Create and copy the token
+
+Then run:
+export GITLAB_TOKEN=glpat-your_token_here
+----
+
+===== Bugzilla (Fedora)
+
+----
+To create a Bugzilla API Key:
+
+1. Go to: https://bugzilla.redhat.com/userprefs.cgi?tab=apikey
+2. Log in with your Fedora account
+3. Generate a new API key
+4. Copy the key
+
+Then run:
+export BUGZILLA_API_KEY=your_api_key_here
+
+Optionally set a custom Bugzilla URL:
+export BUGZILLA_URL=https://bugzilla.redhat.com
+----
+
+===== Codeberg
+
+----
+To create a Codeberg Access Token:
+
+1. Go to: https://codeberg.org/user/settings/applications
+2. Generate New Token
+3. Name: "feedback-o-tron"
+4. Permissions: issue (read/write)
+5. Generate and copy
+
+Then run:
+export CODEBERG_TOKEN=your_token_here
+----
+
+===== Bitbucket
+
+----
+To create a Bitbucket App Password:
+
+1. Go to: https://bitbucket.org/account/settings/app-passwords/
+2. Create app password
+3. Name: "feedback-o-tron"
+4. Permissions: Issues (read/write), Repositories (read)
+5. Create and copy
+
+Then run:
+export BITBUCKET_TOKEN=your_app_password
+export BITBUCKET_USERNAME=your_username
+----
+
+==== Step 6: Configure MCP (If Using Claude Code)
+
+If the user wants Claude Code integration:
+
+----
+Add this to ~/.config/claude/mcp_servers.json:
+----
+
+[source,json]
+----
+{
+  "feedback-o-tron": {
+    "command": "/full/path/to/feedback-o-tron/elixir-mcp/feedback-a-tron",
+    "args": ["--mcp-server"],
+    "env": {
+      "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+      "BUGZILLA_API_KEY": "${BUGZILLA_API_KEY}"
+    }
+  }
+}
+----
+
+----
+Replace /full/path/to/ with the actual path where you cloned it.
+Then restart Claude Code for the MCP server to be available.
+----
+
+==== Step 7: Run Verification Test
+
+[source,bash]
+----
+# Dry-run test (submits nothing)
+./feedback-a-tron submit \
+  --repo "test/repo" \
+  --title "Installation verification" \
+  --body "Testing feedback-o-tron setup" \
+  --platform github \
+  --dry-run
+----
+
+Expected output:
+
+----
+Submission ABC123 completed
+  [DRY RUN] github: Would submit to test/repo
+----
+
+==== Step 8: Provide Usage Examples
+
+After setup is verified:
+
+----
+Setup complete! Here's how to use feedback-o-tron:
+
+File a bug to GitHub:
+  ./feedback-a-tron submit --repo "owner/repo" --title "Bug title" --body "Details" --platform github
+
+File to Bugzilla (Fedora):
+  ./feedback-a-tron submit --repo "Fedora" --title "App crashes" --body "Details" --platform bugzilla --component "kde" --version "43"
+
+Multi-platform:
+  ./feedback-a-tron submit --repo "owner/repo" --title "Bug" --body "..." --platform github --platform gitlab
+
+Dry-run (always safe):
+  ./feedback-a-tron submit --repo "test" --title "Test" --body "Test" --dry-run
+
+Or if you set up MCP, just tell Claude Code:
+  "File a bug about the crash in maliit-keyboard on Fedora Bugzilla"
+----
+
+==== Error Handling
+
+Common issues:
+
+[cols="1,2"]
+|===
+|Error |Solution
+
+|"elixir: command not found"
+|Install Elixir via package manager or asdf
+
+|"Could not resolve dependency"
+|Run: `mix deps.clean --all && mix deps.get`
+
+|"escript build failed"
+|Check `mix.exs` escript config, run `mix compile` first
+
+|"401 Unauthorized"
+|Token expired or wrong scopes. Regenerate with correct permissions.
+
+|"Could not resolve host"
+|DNS issue. Check `dig github.com` and internet connection.
+
+|"duplicate detected"
+|Deduplicator working correctly. Use `--force` to submit anyway.
+|===
+
+== Example Conversation
+
+=== User Perspective
+
+----
+User: Set up feedback-o-tron so my AI can file bug reports
+
+AI: I can help set up feedback-o-tron for automated bug reporting.
+
+1. Which platforms do you use? (GitHub, GitLab, Bugzilla, Codeberg, Bitbucket, Email)
+2. Do you have Elixir installed?
+3. Do you want Claude Code MCP integration or just CLI?
+
+User: GitHub and Fedora Bugzilla. I have Elixir via asdf. Just CLI for now.
+
+AI: Before we start, here's what feedback-o-tron does with your credentials:
+[Shows privacy notice]
+
+Do you understand and accept?
+
+User: Yes
+
+AI: Let's build it. Run these commands:
+
+  git clone https://github.com/hyperpolymath/feedback-o-tron
+  cd feedback-o-tron/elixir-mcp
+  mix deps.get
+  mix escript.build
+
+Let me know when that completes.
+
+User: Done, it built successfully
+
+AI: Now let's set up your GitHub token.
+Go to https://github.com/settings/tokens and create a token with "repo" scope.
+Once you have it, run:
+  export GITHUB_TOKEN=ghp_your_token
+
+User: Done
+
+AI: Now for Bugzilla. Go to https://bugzilla.redhat.com/userprefs.cgi?tab=apikey
+Generate an API key, then:
+  export BUGZILLA_API_KEY=your_key
+
+User: Set
+
+AI: Let's test with a dry-run:
+  ./feedback-a-tron submit --repo "test/repo" --title "Test" --body "Test" --platform github --dry-run
+
+User: Got "[DRY RUN] github: Would submit"
+
+AI: You're all set! Here are some examples:
+[Shows usage examples]
+----
+
+== License
+
+Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <jonathan.jewell@open.ac.uk>
+
+SPDX-License-Identifier: PMPL-1.0-or-later

@@ -23,6 +23,123 @@ image:https://img.shields.io/badge/Validated-2%20Real%20Bugs%20Filed-brightgreen
 
 toc::[]
 
+[TIP]
+====
+**AI-Assisted Install:** Just tell any AI: +
+`Set up feedback-o-tron from https://github.com/hyperpolymath/feedback-o-tron` +
+It reads this repo, asks a few questions, and does everything. <<ai-install,Details below>>.
+====
+
+[[ai-install]]
+== AI-Assisted Installation (Recommended)
+
+=== Just Say It
+
+**You don't need to read this README.** Just say this to any AI assistant:
+
+[source,text]
+----
+Set up feedback-o-tron from https://github.com/hyperpolymath/feedback-o-tron
+----
+
+**The URL is the spec.** The AI fetches this repo, reads `docs/AI_INSTALLATION_GUIDE.adoc` inside it, and knows exactly what to do. It figures out your system, installs prerequisites, builds the tool, walks you through credentials, and verifies everything works. You answer a few questions (what platforms, confirm privacy notice) and that's it. No manual steps, no forms, no copying commands.
+
+Any AI that can read a URL and run commands (or generate commands for you to paste) can do this. The guide inside the repo tells the AI everything -- your system config, your preferences, none of that needs to be in the prompt.
+
+The AI handles:
+
+* Checking and installing prerequisites (Elixir, Erlang, Git)
+* Cloning, building, and installing the CLI
+* Walking you through credential creation for your platforms
+* Configuring MCP integration (if you use Claude Code)
+* Running a verification test
+* Showing you how to use it
+
+=== Other Ways to Say It
+
+If your AI already knows about feedback-o-tron (e.g. it can search the web), shorter versions work:
+
+* "Set up feedback-o-tron for automated bug reporting"
+* "Install feedback-o-tron and configure it for GitHub and Bugzilla"
+* "Help me set up feedback-o-tron as an MCP server for Claude Code"
+
+If it doesn't know the project, just include the URL:
+
+* "Set up https://github.com/hyperpolymath/feedback-o-tron on my machine"
+* "I want automated bug filing -- install from https://github.com/hyperpolymath/feedback-o-tron"
+
+=== What You'll Be Asked
+
+Your AI will ask you:
+
+1. **Which platforms?** (GitHub, GitLab, Bugzilla, Codeberg, Bitbucket, Email)
+2. **Privacy confirmation** -- what the tool does with your credentials
+3. **Credential creation** -- the AI tells you where to click, you paste the token back
+
+That's it. Everything else is automatic.
+
+=== Privacy & Security Notice
+
+[IMPORTANT]
+====
+**What feedback-o-tron does:**
+
+* Sends bug reports to platforms you configure
+* Uses API tokens you provide (stored in environment variables only)
+* Logs all operations locally (JSON-lines audit trail)
+* Deduplicates to prevent submitting the same bug twice
+
+**What feedback-o-tron does NOT do:**
+
+* Collect analytics or telemetry
+* Send data anywhere except your configured platforms
+* Store your API tokens in files
+* Submit bugs without your explicit command
+
+**You control everything:** which platforms, dry-run mode, full audit trail, uninstall anytime.
+====
+
+=== After Install
+
+Once your AI finishes, you can:
+
+[source,bash]
+----
+# File a bug (or just tell your AI to do it)
+./feedback-a-tron submit --repo "owner/repo" --title "Bug" --body "Details" --platform github
+
+# Dry-run (safe test)
+./feedback-a-tron submit --repo "test" --title "Test" --body "Test" --dry-run
+
+# Or with Claude Code MCP integration, just say:
+# "File a bug about the crash in maliit-keyboard on Fedora Bugzilla"
+----
+
+=== Uninstall
+
+Tell your AI: "Remove feedback-o-tron from my system"
+
+=== Troubleshooting
+
+[cols="1,3"]
+|===
+|Problem |Solution
+
+|"elixir: command not found"
+|AI will install Elixir for you. Or: `asdf install elixir latest`
+
+|"401 Unauthorized"
+|Token expired or wrong scopes. Tell your AI and it will guide you through regeneration.
+
+|"duplicate detected"
+|Deduplicator working correctly. Use `--force` to submit anyway.
+|===
+
+[[manual-installation]]
+For manual installation without AI assistance, see the <<manual-quick-start,Manual Quick Start>> section below.
+
+'''
+
 == Overview
 
 feedback-o-tron is a production-ready tool for autonomous AI agents to submit bug reports across multiple platforms. Successfully validated on 2026-02-07 with 2 real bugs filed to Fedora Bugzilla:
@@ -43,6 +160,7 @@ Built for reliability with formal verification via Idris2 for critical ABI defin
 * **MCP integration**: Works as Claude Code tool or standalone CLI
 * **CLI mode**: Standalone escript for batch operations and testing
 
+[[quick-start-ai-agents]]
 == Quick Start for AI Agents
 
 === Zero-Knowledge Setup Prompt
@@ -81,6 +199,7 @@ Check STATE.scm in .machine_readable/ for project status and integrate with your
 
 The AI agent will read this prompt and execute all setup steps automatically.
 
+[[manual-quick-start]]
 === Manual Quick Start
 
 [source,bash]
@@ -296,6 +415,8 @@ Elixir/BEAM (Runtime)
 This ensures **provable correctness** at the ABI boundary while maintaining **runtime flexibility** in Elixir.
 
 == Architecture
+
+See link:TOPOLOGY.md[TOPOLOGY.md] for a visual architecture map and completion dashboard.
 
 [source]
 ----
