@@ -1,1 +1,0 @@
-{application,elixir_mcp_server,[{modules,['Elixir.ElixirMcpServer','Elixir.ElixirMcpServer.Protocol','Elixir.ElixirMcpServer.Server','Elixir.ElixirMcpServer.Tool']},{optional_applications,[]},{applications,[kernel,stdlib,elixir,logger,jason]},{description,"Model Context Protocol (MCP) server framework for Elixir/BEAM"},{registered,[]},{vsn,"0.1.0"}]}.
