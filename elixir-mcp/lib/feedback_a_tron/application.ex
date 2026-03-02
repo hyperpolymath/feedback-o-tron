@@ -7,6 +7,9 @@ defmodule FeedbackATron.Application do
   - Deduplicator: Prevents duplicate submissions
   - AuditLog: Records all operations
   - NetworkVerifier: Pre-flight network checks
+  - MigrationObserver: ReScript migration session tracking (optional)
+  - BatchReviewer: Issue review queue (optional, with migration observer)
+  - Pipeline.Supervisor: GenStage pipeline (optional, with migration observer)
   """
 
   use Application
@@ -24,6 +27,7 @@ defmodule FeedbackATron.Application do
     ]
 
     children = maybe_add_mcp_server(children)
+    children = maybe_add_migration_observer(children)
 
     opts = [strategy: :one_for_one, name: FeedbackATron.Supervisor]
     Supervisor.start_link(children, opts)
@@ -39,6 +43,19 @@ defmodule FeedbackATron.Application do
       }
 
       children ++ [mcp_child]
+    else
+      children
+    end
+  end
+
+  defp maybe_add_migration_observer(children) do
+    if migration_observer_enabled?() do
+      children ++
+        [
+          FeedbackATron.MigrationObserver,
+          FeedbackATron.BatchReviewer,
+          FeedbackATron.Pipeline.Supervisor
+        ]
     else
       children
     end
@@ -60,5 +77,19 @@ defmodule FeedbackATron.Application do
       end
 
     env_on? || Enum.any?(System.argv(), &(&1 == "--mcp-server"))
+  end
+
+  defp migration_observer_enabled? do
+    env_val = System.get_env("FEEDBACK_A_TRON_MIGRATION_MODE")
+
+    env_on? =
+      case env_val do
+        nil -> false
+        value ->
+          normalized = value |> String.trim() |> String.downcase()
+          Enum.member?(["1", "true", "yes", "on"], normalized)
+      end
+
+    env_on? || Enum.any?(System.argv(), &(&1 == "--migration-observer"))
   end
 end
