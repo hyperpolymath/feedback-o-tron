@@ -24,7 +24,9 @@ defmodule FeedbackATron.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :crypto, :ssl, :inets],
+      # :ssl required for NNTPS, SMTPS, DoT; :crypto for message IDs, DNS txn IDs
+      # :public_key for TLS cert verification (cacerts_get/0)
+      extra_applications: [:logger, :crypto, :ssl, :public_key, :inets],
       mod: {FeedbackATron.Application, []}
     ]
   end

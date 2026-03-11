@@ -21,7 +21,7 @@ defmodule FeedbackATron.Submitter do
   use GenServer
   require Logger
 
-  alias FeedbackATron.{Credentials, Deduplicator, AuditLog}
+  alias FeedbackATron.{Channel, Credentials, Deduplicator, AuditLog}
 
 
 
@@ -127,151 +127,16 @@ defmodule FeedbackATron.Submitter do
     {:reply, result, state}
   end
 
-  # Platform-specific submission
+  # Platform-specific submission — delegates to Channel behaviour modules
 
-  defp do_submit(:github, issue, cred, opts) do
-    repo = issue.repo || opts[:repo]
-    labels = Keyword.get(opts, :labels, [])
-    label_args = Enum.flat_map(labels, &["--label", &1])
+  defp do_submit(platform, issue, cred, opts) do
+    case Channel.get(platform) do
+      {:ok, channel_mod} ->
+        channel_mod.submit(issue, cred, opts)
 
-    args = [
-      "issue", "create",
-      "--repo", repo,
-      "--title", issue.title,
-      "--body", issue.body
-    ] ++ label_args
-
-    case System.cmd("gh", args, env: [{"GH_TOKEN", cred.token}]) do
-      {url, 0} ->
-        {:ok, %{platform: :github, url: String.trim(url)}}
-      {error, _} ->
-        {:error, %{platform: :github, error: error}}
+      {:error, :unknown_platform} ->
+        {:error, %{platform: platform, error: :unknown_platform}}
     end
-  end
-
-  defp do_submit(:gitlab, issue, cred, opts) do
-    repo = issue.repo || opts[:repo]
-    labels = Keyword.get(opts, :labels, []) |> Enum.join(",")
-
-    args = [
-      "issue", "create",
-      "--repo", repo,
-      "--title", issue.title,
-      "--description", issue.body,
-      "--label", labels
-    ]
-
-    case System.cmd("glab", args, env: [{"GITLAB_TOKEN", cred.token}]) do
-      {url, 0} ->
-        {:ok, %{platform: :gitlab, url: String.trim(url)}}
-      {error, _} ->
-        {:error, %{platform: :gitlab, error: error}}
-    end
-  end
-
-  defp do_submit(:bitbucket, issue, cred, _opts) do
-    # Bitbucket API v2
-    url = "https://api.bitbucket.org/2.0/repositories/#{issue.repo}/issues"
-
-    body = Jason.encode!(%{
-      title: issue.title,
-      content: %{raw: issue.body},
-      priority: "major",
-      kind: "enhancement"
-    })
-
-    headers = [
-      {"Authorization", "Bearer #{cred.token}"},
-      {"Content-Type", "application/json"}
-    ]
-
-    case Req.post(url, body: body, headers: headers) do
-      {:ok, %{status: 201, body: resp}} ->
-        {:ok, %{platform: :bitbucket, url: resp["links"]["html"]["href"]}}
-      {:ok, %{status: status, body: error}} ->
-        {:error, %{platform: :bitbucket, status: status, error: error}}
-      {:error, reason} ->
-        {:error, %{platform: :bitbucket, error: reason}}
-    end
-  end
-
-  defp do_submit(:codeberg, issue, cred, _opts) do
-    # Gitea-compatible API
-    url = "https://codeberg.org/api/v1/repos/#{issue.repo}/issues"
-
-    body = Jason.encode!(%{
-      title: issue.title,
-      body: issue.body
-    })
-
-    headers = [
-      {"Authorization", "token #{cred.token}"},
-      {"Content-Type", "application/json"}
-    ]
-
-    case Req.post(url, body: body, headers: headers) do
-      {:ok, %{status: 201, body: resp}} ->
-        {:ok, %{platform: :codeberg, url: resp["html_url"]}}
-      {:ok, %{status: status, body: error}} ->
-        {:error, %{platform: :codeberg, status: status, error: error}}
-      {:error, reason} ->
-        {:error, %{platform: :codeberg, error: reason}}
-    end
-  end
-
-  defp do_submit(:bugzilla, issue, cred, opts) do
-    # Bugzilla REST API v1
-    base_url = opts[:bugzilla_url] || cred.base_url || "https://bugzilla.redhat.com"
-    product = issue.repo  # For Bugzilla, "repo" is the product name (e.g., "Fedora")
-
-    # Component/version from opts or defaults
-    component = opts[:component] || "distribution"  # Generic component
-    version = opts[:version] || "rawhide"  # Use rawhide for development version
-
-    body = Jason.encode!(%{
-      product: product,
-      component: component,
-      version: version,
-      summary: issue.title,
-      description: issue.body,
-      op_sys: "Linux",
-      platform: "x86_64",
-      severity: opts[:severity] || "medium"
-    })
-
-    headers = [
-      {"Authorization", "Bearer #{cred.token}"},
-      {"Content-Type", "application/json"}
-    ]
-
-    url = "#{base_url}/rest/bug"
-
-    case Req.post(url, body: body, headers: headers) do
-      {:ok, %{status: 200, body: resp}} when is_map(resp) ->
-        bug_id = resp["id"]
-        {:ok, %{platform: :bugzilla, url: "#{base_url}/show_bug.cgi?id=#{bug_id}", bug_id: bug_id}}
-      {:ok, %{status: status, body: error}} ->
-        {:error, %{platform: :bugzilla, status: status, error: error}}
-      {:error, reason} ->
-        {:error, %{platform: :bugzilla, error: reason}}
-    end
-  end
-
-  defp do_submit(:email, issue, cred, opts) do
-    to = opts[:email_to] || cred.default_recipient
-
-    _email = %{
-      to: to,
-      from: cred.from_address,
-      subject: issue.title,
-      body: issue.body
-    }
-
-    # Email submission is not fully implemented without a Mailer library like Swoosh.
-    # Returning an error to indicate this.
-    Logger.warning("Attempted email submission, but Mailer.deliver/1 is not implemented.",
-      issue: issue.title, recipient: opts[:email_to] || cred.default_recipient)
-    {:error, %{platform: :email, error: :not_implemented, reason: "Mailer library not configured or missing."}}
   end
 
   # Helpers

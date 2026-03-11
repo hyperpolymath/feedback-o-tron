@@ -15,7 +15,10 @@ defmodule FeedbackATron.Credentials do
 
 
 
-  defstruct [:github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email]
+  defstruct [
+    :github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email,
+    :nntp, :discourse, :mailman, :sourcehut, :jira, :matrix
+  ]
 
   @doc """
   Load credentials from all available sources.
@@ -27,7 +30,13 @@ defmodule FeedbackATron.Credentials do
       bitbucket: load_bitbucket_creds(),
       codeberg: load_codeberg_creds(),
       bugzilla: load_bugzilla_creds(),
-      email: load_email_config()
+      email: load_email_config(),
+      nntp: load_nntp_creds(),
+      discourse: load_discourse_creds(),
+      mailman: load_mailman_creds(),
+      sourcehut: load_sourcehut_creds(),
+      jira: load_jira_creds(),
+      matrix: load_matrix_creds()
     }
   end
 
@@ -157,6 +166,137 @@ defmodule FeedbackATron.Credentials do
         from_address: System.get_env("SMTP_FROM", "feedback@localhost"),
         default_recipient: System.get_env("FEEDBACK_EMAIL_TO")
       }
+    end
+  end
+
+  # NNTP: NNTPS server config
+  defp load_nntp_creds do
+    case System.get_env("NNTP_SERVER") do
+      nil -> []
+      server ->
+        [%{
+          source: :env,
+          server: server,
+          port: String.to_integer(System.get_env("NNTP_PORT", "563")),
+          newsgroup: System.get_env("NNTP_NEWSGROUP"),
+          username: System.get_env("NNTP_USERNAME"),
+          password: System.get_env("NNTP_PASSWORD"),
+          from: System.get_env("NNTP_FROM", "feedback-a-tron@localhost")
+        }]
+    end
+  end
+
+  # Discourse: HTTPS API
+  defp load_discourse_creds do
+    case System.get_env("DISCOURSE_URL") do
+      nil -> []
+      url ->
+        if String.starts_with?(url, "https://") do
+          [%{
+            source: :env,
+            base_url: url,
+            api_key: System.get_env("DISCOURSE_API_KEY"),
+            api_username: System.get_env("DISCOURSE_API_USERNAME", "system"),
+            default_category_id: System.get_env("DISCOURSE_CATEGORY_ID")
+          }]
+        else
+          Logger.warning("Discourse URL must be HTTPS, ignoring: #{url}")
+          []
+        end
+    end
+  end
+
+  # Mailman: SMTPS or HyperKitty REST
+  defp load_mailman_creds do
+    creds = []
+
+    # HyperKitty REST API
+    creds = case System.get_env("HYPERKITTY_URL") do
+      nil -> creds
+      url ->
+        if String.starts_with?(url, "https://") do
+          [%{
+            source: :env,
+            hyperkitty_url: url,
+            api_key: System.get_env("HYPERKITTY_API_KEY"),
+            list_id: System.get_env("MAILMAN_LIST_ID")
+          } | creds]
+        else
+          creds
+        end
+    end
+
+    # Direct SMTPS to list address
+    creds = case System.get_env("MAILMAN_LIST_ADDRESS") do
+      nil -> creds
+      list_addr ->
+        [%{
+          source: :env,
+          list_address: list_addr,
+          smtp_server: System.get_env("MAILMAN_SMTP_SERVER"),
+          smtp_port: String.to_integer(System.get_env("MAILMAN_SMTP_PORT", "465")),
+          smtp_username: System.get_env("MAILMAN_SMTP_USERNAME"),
+          smtp_password: System.get_env("MAILMAN_SMTP_PASSWORD"),
+          from: System.get_env("MAILMAN_FROM", "feedback-a-tron@localhost")
+        } | creds]
+    end
+
+    creds
+  end
+
+  # SourceHut: personal access token
+  defp load_sourcehut_creds do
+    case System.get_env("SRHT_TOKEN") do
+      nil -> []
+      token ->
+        [%{
+          source: :env,
+          token: token,
+          tracker: System.get_env("SRHT_TRACKER"),
+          api_base: System.get_env("SRHT_API_BASE", "https://todo.sr.ht")
+        }]
+    end
+  end
+
+  # Jira: Cloud (email + API token) or Server (PAT)
+  defp load_jira_creds do
+    case System.get_env("JIRA_URL") do
+      nil -> []
+      url ->
+        if String.starts_with?(url, "https://") do
+          [%{
+            source: :env,
+            base_url: url,
+            email: System.get_env("JIRA_EMAIL"),
+            api_token: System.get_env("JIRA_API_TOKEN"),
+            token: System.get_env("JIRA_TOKEN"),
+            project_key: System.get_env("JIRA_PROJECT_KEY"),
+            default_issue_type: System.get_env("JIRA_ISSUE_TYPE", "Task"),
+            api_version: System.get_env("JIRA_API_VERSION", "2")
+          }]
+        else
+          Logger.warning("Jira URL must be HTTPS, ignoring: #{url}")
+          []
+        end
+    end
+  end
+
+  # Matrix: homeserver + access token
+  defp load_matrix_creds do
+    case System.get_env("MATRIX_HOMESERVER") do
+      nil -> []
+      homeserver ->
+        if String.starts_with?(homeserver, "https://") do
+          [%{
+            source: :env,
+            homeserver: homeserver,
+            access_token: System.get_env("MATRIX_ACCESS_TOKEN"),
+            room_id: System.get_env("MATRIX_ROOM_ID")
+          }]
+        else
+          Logger.warning("Matrix homeserver must be HTTPS, ignoring: #{homeserver}")
+          []
+        end
     end
   end
 

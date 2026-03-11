@@ -209,22 +209,22 @@ defmodule FeedbackATron.MigrationObserver do
     end
   end
 
-  defp compute_diff(before, after) do
-    before_deprecated = get_in(before, ["migration_metrics", "deprecated_api_count"]) || 0
-    after_deprecated = get_in(after, ["migration_metrics", "deprecated_api_count"]) || 0
-    before_modern = get_in(before, ["migration_metrics", "modern_api_count"]) || 0
-    after_modern = get_in(after, ["migration_metrics", "modern_api_count"]) || 0
-    before_health = get_in(before, ["migration_metrics", "health_score"]) || 0.0
-    after_health = get_in(after, ["migration_metrics", "health_score"]) || 0.0
+  defp compute_diff(before_snapshot, after_snapshot) do
+    before_deprecated = get_in(before_snapshot, ["migration_metrics", "deprecated_api_count"]) || 0
+    after_deprecated = get_in(after_snapshot, ["migration_metrics", "deprecated_api_count"]) || 0
+    before_modern = get_in(before_snapshot, ["migration_metrics", "modern_api_count"]) || 0
+    after_modern = get_in(after_snapshot, ["migration_metrics", "modern_api_count"]) || 0
+    before_health = get_in(before_snapshot, ["migration_metrics", "health_score"]) || 0.0
+    after_health = get_in(after_snapshot, ["migration_metrics", "health_score"]) || 0.0
 
     %{
       health_delta: after_health - before_health,
       deprecated_delta: after_deprecated - before_deprecated,
       modern_delta: after_modern - before_modern,
-      version_before: get_in(before, ["migration_metrics", "version_bracket"]),
-      version_after: get_in(after, ["migration_metrics", "version_bracket"]),
-      config_before: get_in(before, ["migration_metrics", "config_format"]),
-      config_after: get_in(after, ["migration_metrics", "config_format"])
+      version_before: get_in(before_snapshot, ["migration_metrics", "version_bracket"]),
+      version_after: get_in(after_snapshot, ["migration_metrics", "version_bracket"]),
+      config_before: get_in(before_snapshot, ["migration_metrics", "config_format"]),
+      config_after: get_in(after_snapshot, ["migration_metrics", "config_format"])
     }
   end
 
