@@ -20,15 +20,15 @@
 
 ```
 .machine_readable/
-├── STATE.scm          # Current project state (100% complete)
-├── META.scm           # Meta-level information
-├── ECOSYSTEM.scm      # Ecosystem relationships
-├── AGENTIC.scm        # AI agent policies
-├── NEUROSYM.scm       # Neurosymbolic integration
-└── PLAYBOOK.scm       # Standard operating procedures
+├── .machine_readable/6a2/STATE.a2ml          # Current project state (100% complete)
+├── .machine_readable/6a2/META.a2ml           # Meta-level information
+├── .machine_readable/6a2/ECOSYSTEM.a2ml      # Ecosystem relationships
+├── .machine_readable/6a2/AGENTIC.a2ml        # AI agent policies
+├── .machine_readable/6a2/NEUROSYM.a2ml       # Neurosymbolic integration
+└── .machine_readable/6a2/PLAYBOOK.a2ml       # Standard operating procedures
 ```
 
-**NEVER** create STATE.scm, META.scm, ECOSYSTEM.scm, AGENTIC.scm, NEUROSYM.scm, or PLAYBOOK.scm in the repository root.
+**NEVER** create .machine_readable/6a2/STATE.a2ml, .machine_readable/6a2/META.a2ml, .machine_readable/6a2/ECOSYSTEM.a2ml, .machine_readable/6a2/AGENTIC.a2ml, .machine_readable/6a2/NEUROSYM.a2ml, or .machine_readable/6a2/PLAYBOOK.a2ml in the repository root.
 
 ### Source Code Structure
 
@@ -88,14 +88,14 @@ LICENSE.txt                 # PMPL-1.0-or-later
 
 ### on-enter (Session Start)
 
-1. Read `.machine_readable/STATE.scm` to understand current completion status (100%)
+1. Read `.machine_readable/6a2/STATE.a2ml` to understand current completion status (100%)
 2. Check `elixir-mcp/` for any uncommitted changes
-3. Review recent session history in STATE.scm
+3. Review recent session history in .machine_readable/6a2/STATE.a2ml
 4. Note production status: Real bugs filed to Bugzilla
 
 ### on-exit (Session End)
 
-1. Update STATE.scm with session achievements
+1. Update .machine_readable/6a2/STATE.a2ml with session achievements
 2. Commit changes with clear message: "docs: update X" or "fix: resolve Y"
 3. Run tests if code changed: `cd elixir-mcp && mix test`
 4. Update audit if new platforms or features added
@@ -110,7 +110,7 @@ LICENSE.txt                 # PMPL-1.0-or-later
 4. Update CLI parser for platform-specific flags
 5. Add tests in test/submitter_test.exs
 6. Update README.adoc with usage examples
-7. Update STATE.scm completion status
+7. Update .machine_readable/6a2/STATE.a2ml completion status
 
 ### Testing
 
@@ -120,11 +120,11 @@ LICENSE.txt                 # PMPL-1.0-or-later
 
 ### Bug Fixes
 
-- Check STATE.scm session history for similar issues
+- Check .machine_readable/6a2/STATE.a2ml session history for similar issues
 - Add test case reproducing bug
 - Fix implementation
 - Verify all 26 tests still pass
-- Update STATE.scm with bug fix note
+- Update .machine_readable/6a2/STATE.a2ml with bug fix note
 
 ## Integration Points
 

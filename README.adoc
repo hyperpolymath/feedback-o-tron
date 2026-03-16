@@ -194,7 +194,7 @@ I need you to set up feedback-o-tron, an autonomous bug reporting tool. Here's w
 After setup, you can submit bugs with commands like:
 ./feedback-a-tron submit --repo "Fedora" --title "App crashes on launch" --body "Details..." --platform bugzilla --component "kde" --version "43"
 
-Check STATE.scm in .machine_readable/ for project status and integrate with your workflow.
+Check .machine_readable/6a2/STATE.a2ml in .machine_readable/ for project status and integrate with your workflow.
 ----
 
 The AI agent will read this prompt and execute all setup steps automatically.
