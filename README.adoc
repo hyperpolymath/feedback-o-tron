@@ -6,7 +6,7 @@ image:https://img.shields.io/badge/RSR-Certified-gold[RSR Certified]
 image:https://img.shields.io/badge/Idris-inside-purple[Idris Inside]
 image:https://img.shields.io/badge/Status-Production%20Ready-green[Production Ready]
 
-Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>
+Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 v1.0.0, 2026-02-07
 :toc: macro
 :icons: font
