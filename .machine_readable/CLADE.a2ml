@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Clade declaration — part of the gv-clade-index registry
+# See: https://github.com/hyperpolymath/gv-clade-index
+
+[identity]
+uuid = "9f11b233-d506-5c01-8c50-15cd0a4df7c8"
+primary-forge = "github"
+primary-owner = "hyperpolymath"
+canonical-name = "feedback-o-tron"
+prefixed-name = "ap-feedback-o-tron"
+
+[clade]
+primary = "ap"
+secondary = []
+assigned = "2026-03-16"
+rationale = ""
+
+[forges]
+github = "hyperpolymath/feedback-o-tron"
+gitlab = "hyperpolymath/feedback-o-tron"
+bitbucket = "hyperpolymath/feedback-o-tron"
+
+[lineage]
+type = "standalone"
+parent = "Feedback collection and management"
+born = "2026-03-16"
