@@ -17,7 +17,8 @@ defmodule FeedbackATron.Credentials do
 
   defstruct [
     :github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email,
-    :nntp, :discourse, :mailman, :sourcehut, :jira, :matrix
+    :nntp, :discourse, :mailman, :sourcehut, :jira, :matrix,
+    :discord, :reddit
   ]
 
   @doc """
@@ -36,7 +37,9 @@ defmodule FeedbackATron.Credentials do
       mailman: load_mailman_creds(),
       sourcehut: load_sourcehut_creds(),
       jira: load_jira_creds(),
-      matrix: load_matrix_creds()
+      matrix: load_matrix_creds(),
+      discord: load_discord_creds(),
+      reddit: load_reddit_creds()
     }
   end
 
@@ -295,6 +298,62 @@ defmodule FeedbackATron.Credentials do
           }]
         else
           Logger.warning("Matrix homeserver must be HTTPS, ignoring: #{homeserver}")
+          []
+        end
+    end
+  end
+
+  # Discord: Bot token + channel, or webhook URL
+  defp load_discord_creds do
+    creds = []
+
+    # Bot mode: token + channel_id
+    creds = case System.get_env("DISCORD_BOT_TOKEN") do
+      nil -> creds
+      token ->
+        channel_id = System.get_env("DISCORD_CHANNEL_ID")
+        if channel_id do
+          [%{source: :env, token: "Bot #{token}", channel_id: channel_id} | creds]
+        else
+          Logger.warning("DISCORD_BOT_TOKEN set but DISCORD_CHANNEL_ID missing, skipping bot mode")
+          creds
+        end
+    end
+
+    # Webhook mode: standalone webhook URL
+    creds = case System.get_env("DISCORD_WEBHOOK_URL") do
+      nil -> creds
+      url ->
+        if String.starts_with?(url, "https://discord.com/api/webhooks/") do
+          [%{source: :env, webhook_url: url} | creds]
+        else
+          Logger.warning("DISCORD_WEBHOOK_URL must be HTTPS Discord webhook, ignoring: #{url}")
+          creds
+        end
+    end
+
+    creds
+  end
+
+  # Reddit: OAuth2 script app credentials
+  defp load_reddit_creds do
+    case {System.get_env("REDDIT_CLIENT_ID"), System.get_env("REDDIT_CLIENT_SECRET")} do
+      {nil, _} -> []
+      {_, nil} -> []
+      {client_id, client_secret} ->
+        username = System.get_env("REDDIT_USERNAME")
+        password = System.get_env("REDDIT_PASSWORD")
+
+        if username && password do
+          [%{
+            source: :env,
+            client_id: client_id,
+            client_secret: client_secret,
+            username: username,
+            password: password
+          }]
+        else
+          Logger.warning("REDDIT_CLIENT_ID/SECRET set but REDDIT_USERNAME/PASSWORD missing")
           []
         end
     end

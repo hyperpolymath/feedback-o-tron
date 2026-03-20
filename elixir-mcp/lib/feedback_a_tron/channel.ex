@@ -55,7 +55,9 @@ defmodule FeedbackATron.Channel do
       mailman: FeedbackATron.Channels.Mailman,
       sourcehut: FeedbackATron.Channels.SourceHut,
       jira: FeedbackATron.Channels.Jira,
-      matrix: FeedbackATron.Channels.Matrix
+      matrix: FeedbackATron.Channels.Matrix,
+      discord: FeedbackATron.Channels.Discord,
+      reddit: FeedbackATron.Channels.Reddit
     }
   end
 
