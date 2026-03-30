@@ -112,7 +112,7 @@ defmodule FeedbackATron.CLI do
 
   defp parse_flags(["--platform", platform | rest], acc) do
     platforms = Keyword.get(acc, :platforms, [])
-    platform_atom = String.to_atom(platform)
+    platform_atom = String.to_existing_atom(platform)
     parse_flags(rest, Keyword.put(acc, :platforms, [platform_atom | platforms]))
   end
 
