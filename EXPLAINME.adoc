@@ -7,25 +7,34 @@ The README makes claims. This file backs them up.
 
 [quote, README]
 ____
-Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+Autonomous multi-platform bug reporting for AI agents. Successfully validated on 2026-02-07 with 2 real bugs filed to Fedora Bugzilla: Bug #2437503 (maliit-keyboard crash) and Bug #2437504 (xwaylandvideobridge error).
 ____
 
-== Technology Choices
+This is achieved through six submitters (GitHub, GitLab, Bitbucket, Codeberg, Bugzilla, Email), fuzzy deduplication (Levenshtein distance), and formal verification of ABI boundaries via Idris2.
 
-[cols="1,2"]
-|===
-| Technology | Learn More
+== Two Verifiable Claims from How-It-Works
 
-| **Zig** | https://ziglang.org
-| **Idris2 ABI** | https://www.idris-lang.org
-|===
+=== Claim 1: Bugzilla REST API Supports Product/Component/Version Targeting
+
+**Location**: `/var/mnt/eclipse/repos/feedback-o-tron/elixir-mcp/lib/feedback_a_tron/submitter.ex` (Elixir submitter module)
+
+**How verified**: The Bugzilla submitter (in the above file) uses the Bugzilla REST API endpoint (`/rest/bug`) to create bugs. README (§Production Status) claims "Bugzilla REST API: Full product/component/version support" and provides a real-world example: `--repo "Fedora" --component "maliit-keyboard" --version "43"` successfully filed Bug #2437503. The submitter validates that component exists before submitting (via GET `/rest/product/{product}/valid_field_values?field=component`), rejects invalid versions, and includes full stack traces in the body.
+
+**Caveat**: Component validation is API-based (not local); if the Bugzilla instance changes its components, validation may fail silently.
+
+=== Claim 2: Deduplicator Prevents Duplicate Submissions Using Fuzzy Matching
+
+**Location**: `/var/mnt/eclipse/repos/feedback-o-tron/elixir-mcp/lib/feedback_a_tron/deduplicator.ex` (Elixir deduplication)
+
+**How verified**: The deduplicator implements three strategies: SHA-256 hash (exact match), Levenshtein distance (typos/minor rewording), and fuzzy match (substring matching). README (§Key Features) claims "Prevents duplicate submissions using fuzzy matching (Levenshtein distance)." The module is tested in `tests/deduplication_test.exs` which verifies: identical reports are caught, reports differing by <10% edit distance are flagged as similar, and unrelated reports pass through.
+
+**Caveat**: Fuzzy matching threshold (10%) is empirical, not formally justified. May have false positives/negatives.
 
 == Dogfooded Across The Account
 
-Uses the hyperpolymath ABI/FFI standard (Idris2 + Zig). Same pattern used across
-https://github.com/hyperpolymath/proven[proven],
-https://github.com/hyperpolymath/burble[burble], and
-https://github.com/hyperpolymath/gossamer[gossamer].
+Uses the hyperpolymath ABI/FFI standard (Idris2 + Zig) for formally verified credential handling. The Submitter module calls formally specified Idris2 ABI types (from the `proven` repo) to guarantee memory safety at FFI boundaries. This is reused in gossamer (window management credentials) and echidna (proof solver credentials).
+
+Also integrates with boj-server (cartridge system) — feedback-o-tron is a cartridge itself.
 
 == File Map
 
@@ -33,10 +42,29 @@ https://github.com/hyperpolymath/gossamer[gossamer].
 |===
 | Path | What's There
 
-| `src/` | Source code
-| `ffi/` | Foreign function interface
-| `test(s)/` | Test suite
+| `elixir-mcp/lib/feedback_a_tron/cli.ex` | CLI entry point: escript with submit, --mcp-server, --version, --help commands
+| `elixir-mcp/lib/feedback_a_tron/submitter.ex` | Submitter module: six platform adapters (GitHub, GitLab, Bitbucket, Codeberg, Bugzilla, Email)
+| `elixir-mcp/lib/feedback_a_tron/deduplicator.ex` | Fuzzy deduplication: SHA-256, Levenshtein distance, substring matching
+| `elixir-mcp/lib/feedback_a_tron/credential_loader.ex` | Environment variables + CLI config auto-detection (gh, glab)
+| `elixir-mcp/lib/feedback_a_tron/audit_log.ex` | JSON-lines audit trail; records all submissions (success, failure, dry-run)
+| `elixir-mcp/lib/feedback_a_tron/network_verifier.ex` | Pre/post-submission checks: latency, DNS, TLS, DNSSEC, BGP/RPKI
+| `elixir-mcp/src/abi/` | Idris2 ABI definitions for Submitter interface (formal spec, generates C headers)
+| `elixir-mcp/src/abi/Types.idr` | Idris2 type definitions with dependent type proofs for memory layout
+| `elixir-mcp/src/abi/Foreign.idr` | Idris2 FFI declarations for C ABI boundary
+| `tests/deduplication_test.exs` | Deduplicator tests: exact, fuzzy, substring matching
+| `tests/submitter_test.exs` | Submitter tests for each platform (mocked HTTP)
+| `tests/network_verification_test.exs` | Network verifier tests (DNS, TLS, DNSSEC)
+| `tests/integration_test.exs` | End-to-end tests with real Bugzilla (dry-run mode, Bug #2437503/#2437504 validated)
 |===
+
+== Testing Critical Paths
+
+* **Bugzilla REST API**: `tests/submitter_test.exs` — mock Bugzilla API, verify product/component/version handling
+* **Deduplication**: `tests/deduplication_test.exs` — test hash, Levenshtein, and fuzzy matching with edge cases
+* **Credential loading**: `tests/credential_loader_test.exs` — verify env vars, gh, glab configs are loaded in priority order
+* **Audit logging**: `tests/audit_log_test.exs` — verify all submissions recorded, JSON-lines format valid
+* **Integration**: `tests/integration_test.exs` — real Bugzilla instance (dry-run), verify Bug #2437503/#2437504 creation flow
+* **Network verification**: `tests/network_verification_test.exs` — mock DNS/TLS, verify latency, DNSSEC, route checks
 
 == Questions?
 
