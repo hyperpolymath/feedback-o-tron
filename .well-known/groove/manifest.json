@@ -1,0 +1,38 @@
+{
+  "groove_version": "1",
+  "service_id": "feedback-o-tron",
+  "service_version": "0.2.0",
+  "mode": "passive",
+  "capabilities": {
+    "bug-reporting": {
+      "type": "bug-reporting",
+      "description": "Autonomous multi-platform bug reporting for AI agents — submits structured findings to GitHub, GitLab, or local files",
+      "protocol": "cli",
+      "requires_auth": true,
+      "panel_compatible": true
+    },
+    "dogfood-feedback": {
+      "type": "dogfood-feedback",
+      "description": "Receives DOG-XX check failures from dogfood-gate and creates actionable issues",
+      "protocol": "cli",
+      "requires_auth": true,
+      "panel_compatible": true
+    }
+  },
+  "consumes": [
+    "static-analysis",
+    "octad-storage",
+    "bot-orchestration"
+  ],
+  "invoke_patterns": {
+    "ci": "feedback-o-tron submit --ci --format json --source dogfood-gate",
+    "local": "feedback-o-tron submit --interactive",
+    "mcp": "boj cartridge_invoke feedback-o-tron"
+  },
+  "health": null,
+  "applicability": [
+    "individual",
+    "team",
+    "ci"
+  ]
+}
