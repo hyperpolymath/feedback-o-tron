@@ -1,0 +1,121 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+= Contributing to feedback-o-tron
+:toc:
+
+Thank you for your interest in contributing to feedback-o-tron!
+
+== Language Policy
+
+This project follows the **Hyperpolymath RSR 2026** language standard. Before contributing, review the allowed and banned languages in `CLAUDE.md`.
+
+**Allowed:**
+
+* **Elixir** — primary application code (all `elixir-mcp/` modules)
+* **Zig** — FFI bridge (`ffi/zig/`)
+* **Rust** — performance-critical components
+* **Bash/POSIX Shell** — scripts and automation
+* **Julia** — statistics (`julia-stats/`)
+
+**Banned:** TypeScript, Node.js, npm, Python, Go, Java, Kotlin, Swift. See `CLAUDE.md` for the full list and rationale.
+
+== Getting Started
+
+=== Prerequisites
+
+* Elixir >= 1.15 with OTP >= 26
+* Zig (for FFI development)
+* Nix or Guix (optional, for reproducible environments)
+
+=== Setup
+
+[source,bash]
+----
+# Using Nix flake
+nix develop
+
+# Or manually
+cd elixir-mcp
+mix deps.get
+mix compile
+----
+
+=== Running Tests
+
+[source,bash]
+----
+cd elixir-mcp
+mix test          # Run all tests
+mix test --trace  # With verbose output
+----
+
+== Development Guidelines
+
+=== Code Style
+
+* Run `mix format` before committing — CI enforces formatting
+* Follow existing patterns in the codebase
+* All channel adapters must implement the `FeedbackATron.Channel` behaviour
+* All transports must be encrypted (HTTPS, NNTPS, SMTPS, Matrix)
+
+=== Security Requirements
+
+* No MD5 or SHA1 for security purposes (use SHA-256+)
+* HTTPS only — no plaintext HTTP URLs
+* No hardcoded secrets or credentials
+* All dependencies must be SHA-pinned
+* SPDX license headers on all source files
+
+=== Error Handling
+
+Use the structured error types in `FeedbackATron.Error`:
+
+* `AuthenticationError` — credential failures
+* `RateLimitError` — platform rate limits
+* `NetworkError` — connectivity issues
+* `ValidationError` — bad input
+* `PlatformError` — unexpected API responses
+
+=== Adding a New Channel
+
+1. Create `lib/feedback_a_tron/channels/your_platform.ex`
+2. Implement `@behaviour FeedbackATron.Channel`
+3. Add the platform to `Channel.registry/0`
+4. Add credential loading to `Credentials`
+5. Add rate limit config to `RateLimiter`
+6. Add tests in `test/`
+7. Update the CLI help text
+
+=== Commit Messages
+
+* Use present tense: "Add feature" not "Added feature"
+* Keep the first line under 72 characters
+* Reference issues where applicable
+
+== Architecture
+
+See `TOPOLOGY.md` for the full architecture diagram.
+
+Key modules:
+
+* `Submitter` — orchestrates multi-platform submission with retry and rate limiting
+* `Channel` — behaviour and registry for platform adapters
+* `Deduplicator` — fuzzy matching to prevent duplicate filings
+* `RateLimiter` — per-platform token bucket rate limiting
+* `Retry` — exponential backoff for transient failures
+* `AuditLog` — JSON-lines audit trail
+* `NetworkVerifier` — pre/post-submission network safety checks
+* `Credentials` — multi-source credential loading with rotation
+
+== Licensing
+
+All contributions must be licensed under PMPL-1.0-or-later.
+Add the SPDX header to all new files:
+
+[source,elixir]
+----
+# SPDX-License-Identifier: PMPL-1.0-or-later
+----
+
+== Reporting Issues
+
+Use feedback-o-tron itself to report issues! Or open an issue on the GitHub repository.

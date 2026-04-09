@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+name: Elixir CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'elixir-mcp/**'
+      - '.github/workflows/elixir-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'elixir-mcp/**'
+      - '.github/workflows/elixir-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: elixir-mcp
+
+    strategy:
+      matrix:
+        elixir: ['1.15', '1.16', '1.17']
+        otp: ['26']
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@5304e04ea2b355f03681464e683d92e3b2f18451 # v1.18.2
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
+
+      - name: Cache deps
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            elixir-mcp/deps
+            elixir-mcp/_build
+          key: mix-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('elixir-mcp/mix.lock') }}
+          restore-keys: |
+            mix-${{ matrix.elixir }}-${{ matrix.otp }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Run tests
+        run: mix test --trace
+
+  dialyzer:
+    name: Dialyzer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: elixir-mcp
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@5304e04ea2b355f03681464e683d92e3b2f18451 # v1.18.2
+        with:
+          elixir-version: '1.17'
+          otp-version: '26'
+
+      - name: Cache deps
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            elixir-mcp/deps
+            elixir-mcp/_build
+          key: dialyzer-${{ hashFiles('elixir-mcp/mix.lock') }}
+          restore-keys: |
+            dialyzer-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Run Dialyzer
+        run: mix dialyzer
+        continue-on-error: true

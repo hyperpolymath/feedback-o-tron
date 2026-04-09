@@ -38,11 +38,20 @@ defmodule FeedbackATron.Channels.Bitbucket do
       {:ok, %{status: 201, body: resp}} ->
         {:ok, %{platform: :bitbucket, url: resp["links"]["html"]["href"]}}
 
+      {:ok, %{status: 401, body: _error}} ->
+        {:error, %FeedbackATron.Error.AuthenticationError{platform: :bitbucket, reason: "token rejected"}}
+
+      {:ok, %{status: 429, body: _error}} ->
+        {:error, %FeedbackATron.Error.RateLimitError{platform: :bitbucket, resets_at: nil, remaining: 0}}
+
+      {:ok, %{status: status, body: error}} when status >= 400 and status < 500 ->
+        {:error, %FeedbackATron.Error.ValidationError{field: "issue", reason: inspect(error)}}
+
       {:ok, %{status: status, body: error}} ->
-        {:error, %{platform: :bitbucket, status: status, error: error}}
+        {:error, %FeedbackATron.Error.PlatformError{platform: :bitbucket, status: status, body: inspect(error)}}
 
       {:error, reason} ->
-        {:error, %{platform: :bitbucket, error: reason}}
+        {:error, %FeedbackATron.Error.NetworkError{platform: :bitbucket, reason: inspect(reason), url: url}}
     end
   end
 end

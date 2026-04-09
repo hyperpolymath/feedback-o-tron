@@ -21,7 +21,7 @@ defmodule FeedbackATron.Submitter do
   use GenServer
   require Logger
 
-  alias FeedbackATron.{Channel, Credentials, Deduplicator, AuditLog}
+  alias FeedbackATron.{Channel, Credentials, Deduplicator, AuditLog, RateLimiter, Retry}
 
 
 
@@ -89,13 +89,15 @@ defmodule FeedbackATron.Submitter do
     results =
       platforms
       |> Enum.map(fn platform ->
-        with :ok <- check_rate_limit(state, platform),
+        with :ok <- RateLimiter.check(platform),
              :ok <- maybe_dedupe(dedupe, platform, issue),
              {:ok, cred} <- Credentials.get(state.credentials, platform) do
           if dry_run do
             {:ok, %{platform: platform, status: :dry_run, would_submit: issue}}
           else
-            do_submit(platform, issue, cred, opts)
+            result = Retry.with_backoff(fn -> do_submit(platform, issue, cred, opts) end)
+            if match?({:ok, _}, result), do: RateLimiter.record(platform)
+            result
           end
         end
       end)
@@ -140,19 +142,6 @@ defmodule FeedbackATron.Submitter do
   end
 
   # Helpers
-
-  defp check_rate_limit(state, platform) do
-    case Map.get(state.rate_limits, platform) do
-      nil -> :ok
-      %{remaining: 0, resets_at: reset} ->
-        if DateTime.compare(reset, DateTime.utc_now()) == :gt do
-          {:error, :rate_limited}
-        else
-          :ok
-        end
-      _ -> :ok
-    end
-  end
 
   defp maybe_dedupe(false, _platform, _issue), do: :ok
   defp maybe_dedupe(true, _platform, issue) do

@@ -32,8 +32,20 @@ defmodule FeedbackATron.Channels.GitLab do
     ]
 
     case System.cmd("glab", args, env: [{"GITLAB_TOKEN", cred.token}]) do
-      {url, 0} -> {:ok, %{platform: :gitlab, url: String.trim(url)}}
-      {error, _} -> {:error, %{platform: :gitlab, error: error}}
+      {url, 0} ->
+        {:ok, %{platform: :gitlab, url: String.trim(url)}}
+
+      {error, _code} ->
+        cond do
+          String.contains?(error, "401") or String.contains?(error, "auth") ->
+            {:error, %FeedbackATron.Error.AuthenticationError{platform: :gitlab, reason: "token rejected"}}
+
+          String.contains?(error, "429") ->
+            {:error, %FeedbackATron.Error.RateLimitError{platform: :gitlab, resets_at: nil, remaining: 0}}
+
+          true ->
+            {:error, %FeedbackATron.Error.PlatformError{platform: :gitlab, status: nil, body: String.trim(error)}}
+        end
     end
   end
 end

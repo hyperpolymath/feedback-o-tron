@@ -29,8 +29,27 @@ defmodule FeedbackATron.Channels.GitHub do
         label_args
 
     case System.cmd("gh", args, env: [{"GH_TOKEN", cred.token}]) do
-      {url, 0} -> {:ok, %{platform: :github, url: String.trim(url)}}
-      {error, _} -> {:error, %{platform: :github, error: error}}
+      {url, 0} ->
+        {:ok, %{platform: :github, url: String.trim(url)}}
+
+      {error, code} ->
+        {:error, classify_gh_error(:github, error, code)}
+    end
+  end
+
+  defp classify_gh_error(platform, output, _code) do
+    cond do
+      String.contains?(output, "401") or String.contains?(output, "auth") ->
+        %FeedbackATron.Error.AuthenticationError{platform: platform, reason: "token rejected"}
+
+      String.contains?(output, "403") or String.contains?(output, "rate limit") ->
+        %FeedbackATron.Error.RateLimitError{platform: platform, resets_at: nil, remaining: 0}
+
+      String.contains?(output, "422") or String.contains?(output, "validation") ->
+        %FeedbackATron.Error.ValidationError{field: "issue", reason: String.trim(output)}
+
+      true ->
+        %FeedbackATron.Error.PlatformError{platform: platform, status: nil, body: String.trim(output)}
     end
   end
 end

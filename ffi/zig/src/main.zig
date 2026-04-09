@@ -1,4 +1,4 @@
-// {{PROJECT}} FFI Implementation
+// feedback-o-tron FFI Implementation
 //
 // This module implements the C-compatible FFI declared in src/abi/Foreign.idr
 // All types and layouts must match the Idris2 ABI definitions.
@@ -8,8 +8,8 @@
 const std = @import("std");
 
 // Version information (keep in sync with project)
-const VERSION = "0.1.0";
-const BUILD_INFO = "{{PROJECT}} built with Zig " ++ @import("builtin").zig_version_string;
+const VERSION = "1.0.0";
+const BUILD_INFO = "feedback-o-tron built with Zig " ++ @import("builtin").zig_version_string;
 
 /// Thread-local error storage
 threadlocal var last_error: ?[]const u8 = null;
@@ -51,7 +51,7 @@ pub const Handle = opaque {
 
 /// Initialize the library
 /// Returns a handle, or null on failure
-export fn {{project}}_init() ?*Handle {
+export fn feedback_o_tron_init() ?*Handle {
     const allocator = std.heap.c_allocator;
 
     const handle = allocator.create(Handle) catch {
@@ -70,7 +70,7 @@ export fn {{project}}_init() ?*Handle {
 }
 
 /// Free the library handle
-export fn {{project}}_free(handle: ?*Handle) void {
+export fn feedback_o_tron_free(handle: ?*Handle) void {
     const h = handle orelse return;
     const allocator = h.allocator;
 
@@ -86,7 +86,7 @@ export fn {{project}}_free(handle: ?*Handle) void {
 //==============================================================================
 
 /// Process data (example operation)
-export fn {{project}}_process(handle: ?*Handle, input: u32) Result {
+export fn feedback_o_tron_process(handle: ?*Handle, input: u32) Result {
     const h = handle orelse {
         setError("Null handle");
         return .null_pointer;
@@ -110,7 +110,7 @@ export fn {{project}}_process(handle: ?*Handle, input: u32) Result {
 
 /// Get a string result (example)
 /// Caller must free the returned string
-export fn {{project}}_get_string(handle: ?*Handle) ?[*:0]const u8 {
+export fn feedback_o_tron_get_string(handle: ?*Handle) ?[*:0]const u8 {
     const h = handle orelse {
         setError("Null handle");
         return null;
@@ -132,7 +132,7 @@ export fn {{project}}_get_string(handle: ?*Handle) ?[*:0]const u8 {
 }
 
 /// Free a string allocated by the library
-export fn {{project}}_free_string(str: ?[*:0]const u8) void {
+export fn feedback_o_tron_free_string(str: ?[*:0]const u8) void {
     const s = str orelse return;
     const allocator = std.heap.c_allocator;
 
@@ -145,7 +145,7 @@ export fn {{project}}_free_string(str: ?[*:0]const u8) void {
 //==============================================================================
 
 /// Process an array of data
-export fn {{project}}_process_array(
+export fn feedback_o_tron_process_array(
     handle: ?*Handle,
     buffer: ?[*]const u8,
     len: u32,
@@ -181,7 +181,7 @@ export fn {{project}}_process_array(
 
 /// Get the last error message
 /// Returns null if no error
-export fn {{project}}_last_error() ?[*:0]const u8 {
+export fn feedback_o_tron_last_error() ?[*:0]const u8 {
     const err = last_error orelse return null;
 
     // Return C string (static storage, no need to free)
@@ -195,12 +195,12 @@ export fn {{project}}_last_error() ?[*:0]const u8 {
 //==============================================================================
 
 /// Get the library version
-export fn {{project}}_version() [*:0]const u8 {
+export fn feedback_o_tron_version() [*:0]const u8 {
     return VERSION.ptr;
 }
 
 /// Get build information
-export fn {{project}}_build_info() [*:0]const u8 {
+export fn feedback_o_tron_build_info() [*:0]const u8 {
     return BUILD_INFO.ptr;
 }
 
@@ -212,7 +212,7 @@ export fn {{project}}_build_info() [*:0]const u8 {
 pub const Callback = *const fn (u64, u32) callconv(.C) u32;
 
 /// Register a callback
-export fn {{project}}_register_callback(
+export fn feedback_o_tron_register_callback(
     handle: ?*Handle,
     callback: ?Callback,
 ) Result {
@@ -243,9 +243,83 @@ export fn {{project}}_register_callback(
 //==============================================================================
 
 /// Check if handle is initialized
-export fn {{project}}_is_initialized(handle: ?*Handle) u32 {
+export fn feedback_o_tron_is_initialized(handle: ?*Handle) u32 {
     const h = handle orelse return 0;
     return if (h.initialized) 1 else 0;
+}
+
+//==============================================================================
+// Feedback-Specific Operations
+//==============================================================================
+
+/// Compute SHA-256 hash for deduplication (matches Elixir Deduplicator)
+/// Returns first 16 hex chars of SHA-256(input), or null on error.
+/// Caller must free the returned string via feedback_o_tron_free_string.
+export fn feedback_o_tron_compute_hash(
+    input: ?[*]const u8,
+    len: u32,
+) ?[*:0]const u8 {
+    const buf = input orelse {
+        setError("Null input buffer");
+        return null;
+    };
+
+    const data = buf[0..len];
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(data, &digest, .{});
+
+    // Encode first 8 bytes as 16 hex chars
+    const allocator = std.heap.c_allocator;
+    const hex = allocator.alloc(u8, 17) catch {
+        setError("Failed to allocate hash string");
+        return null;
+    };
+
+    const hex_chars = "0123456789abcdef";
+    for (0..8) |i| {
+        hex[i * 2] = hex_chars[digest[i] >> 4];
+        hex[i * 2 + 1] = hex_chars[digest[i] & 0x0f];
+    }
+    hex[16] = 0; // null terminator
+
+    clearError();
+    return @ptrCast(hex.ptr);
+}
+
+/// Generate a cryptographically random submission ID (11 chars, URL-safe base64).
+/// Caller must free the returned string via feedback_o_tron_free_string.
+export fn feedback_o_tron_generate_id() ?[*:0]const u8 {
+    var bytes: [8]u8 = undefined;
+    std.crypto.random.bytes(&bytes);
+
+    const allocator = std.heap.c_allocator;
+    const encoder = std.base64.url_safe_no_pad;
+    const encoded_len = encoder.calcSize(8);
+    const result = allocator.alloc(u8, encoded_len + 1) catch {
+        setError("Failed to allocate ID string");
+        return null;
+    };
+
+    _ = encoder.encode(result[0..encoded_len], &bytes);
+    result[encoded_len] = 0;
+
+    clearError();
+    return @ptrCast(result.ptr);
+}
+
+/// Validate that a URL uses HTTPS (security requirement).
+/// Returns 1 if valid HTTPS, 0 otherwise.
+export fn feedback_o_tron_validate_https(
+    url: ?[*]const u8,
+    len: u32,
+) u32 {
+    const buf = url orelse return 0;
+    const data = buf[0..len];
+
+    if (data.len >= 8 and std.mem.eql(u8, data[0..8], "https://")) {
+        return 1;
+    }
+    return 0;
 }
 
 //==============================================================================
@@ -253,22 +327,22 @@ export fn {{project}}_is_initialized(handle: ?*Handle) u32 {
 //==============================================================================
 
 test "lifecycle" {
-    const handle = {{project}}_init() orelse return error.InitFailed;
-    defer {{project}}_free(handle);
+    const handle = feedback_o_tron_init() orelse return error.InitFailed;
+    defer feedback_o_tron_free(handle);
 
-    try std.testing.expect({{project}}_is_initialized(handle) == 1);
+    try std.testing.expect(feedback_o_tron_is_initialized(handle) == 1);
 }
 
 test "error handling" {
-    const result = {{project}}_process(null, 0);
+    const result = feedback_o_tron_process(null, 0);
     try std.testing.expectEqual(Result.null_pointer, result);
 
-    const err = {{project}}_last_error();
+    const err = feedback_o_tron_last_error();
     try std.testing.expect(err != null);
 }
 
 test "version" {
-    const ver = {{project}}_version();
+    const ver = feedback_o_tron_version();
     const ver_str = std.mem.span(ver);
     try std.testing.expectEqualStrings(VERSION, ver_str);
 }
