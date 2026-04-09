@@ -259,10 +259,31 @@ defmodule FeedbackATron.NetworkVerifier do
     end
   end
 
-  defp check_certificate_transparency(_host) do
-    # Query CT logs for certificate
-    # Simplified - in production use CT API
-    %{status: :not_implemented, note: "Requires CT log API integration"}
+  defp check_certificate_transparency(host) do
+    # Query crt.sh for certificate transparency logs
+    url = "https://crt.sh/?q=#{URI.encode(host)}&output=json"
+
+    case Req.get(url, receive_timeout: 15_000) do
+      {:ok, %{status: 200, body: body}} when is_list(body) ->
+        certs = Enum.take(body, 5)
+        %{
+          status: :present,
+          certificate_count: length(body),
+          recent: Enum.map(certs, fn cert ->
+            %{
+              issuer: cert["issuer_name"],
+              not_before: cert["not_before"],
+              not_after: cert["not_after"]
+            }
+          end)
+        }
+
+      {:ok, %{status: status}} ->
+        %{status: :error, http_status: status}
+
+      {:error, reason} ->
+        %{status: :error, reason: reason}
+    end
   end
 
   defp check_dnssec(host) do
@@ -275,10 +296,16 @@ defmodule FeedbackATron.NetworkVerifier do
     end
   end
 
-  defp check_rpki_validity(_host) do
-    # Check if route origin is RPKI-valid
-    # Requires access to RPKI validator or routinator
-    %{status: :not_implemented, note: "Requires RPKI validator"}
+  defp check_rpki_validity(host) do
+    # Resolve host to IP, then query RPKI validity via Cloudflare's RPKI API
+    case :inet.gethostbyname(String.to_charlist(host)) do
+      {:ok, {:hostent, _, _, _, _, [ip | _]}} ->
+        ip_str = :inet.ntoa(ip) |> to_string()
+        RouteAnalyzer.check_rpki(ip_str)
+
+      {:error, reason} ->
+        %{status: :error, reason: reason}
+    end
   end
 
   # Response verification
@@ -422,19 +449,109 @@ defmodule FeedbackATron.NetworkVerifier.RouteAnalyzer do
     end
   end
 
-  def verify_bgp_origin(_host) do
-    # Would require BGP looking glass or RPKI validator
-    %{status: :not_implemented, note: "Requires BGP/RPKI integration"}
+  def verify_bgp_origin(host) do
+    case :inet.gethostbyname(String.to_charlist(host)) do
+      {:ok, {:hostent, _, _, _, _, [ip | _]}} ->
+        ip_str = :inet.ntoa(ip) |> to_string()
+        asn_info = lookup_asn(ip_str)
+        rpki_info = check_rpki(ip_str)
+
+        %{
+          status: :ok,
+          ip: ip_str,
+          asn: asn_info,
+          rpki: rpki_info,
+          origin_validated: rpki_info[:validity] == "valid"
+        }
+
+      {:error, reason} ->
+        %{status: :error, reason: reason}
+    end
   end
 
-  defp lookup_asn(_ip) do
-    # Use Team Cymru or similar
-    %{status: :not_implemented}
+  @doc """
+  Check RPKI validity for an IP address using Cloudflare's RPKI portal API.
+  Falls back to Team Cymru DNS if the HTTP API is unavailable.
+  """
+  def check_rpki(ip_str) do
+    asn_info = lookup_asn(ip_str)
+    asn = asn_info[:asn]
+    prefix = asn_info[:prefix]
+
+    if asn && prefix do
+      # Query Cloudflare's RPKI API
+      url = "https://rpki.cloudflare.com/api/v1/validity/AS#{asn}/#{prefix}"
+
+      case Req.get(url, receive_timeout: 10_000) do
+        {:ok, %{status: 200, body: body}} when is_map(body) ->
+          validity = get_in(body, ["validated_route", "validity", "state"]) || "unknown"
+          %{
+            status: :ok,
+            validity: validity,
+            asn: asn,
+            prefix: prefix,
+            source: :cloudflare_rpki
+          }
+
+        {:ok, %{status: status}} ->
+          %{status: :error, http_status: status, source: :cloudflare_rpki}
+
+        {:error, reason} ->
+          %{status: :error, reason: reason, source: :cloudflare_rpki}
+      end
+    else
+      %{status: :error, reason: :asn_lookup_failed}
+    end
   end
 
-  defp lookup_geo(_ip) do
-    # Use MaxMind or similar
-    %{status: :not_implemented}
+  defp lookup_asn(ip_str) do
+    # Use Team Cymru DNS-based ASN lookup
+    # Reverse the IP octets and query <reversed>.origin.asn.cymru.com
+    reversed = ip_str |> String.split(".") |> Enum.reverse() |> Enum.join(".")
+    query = "#{reversed}.origin.asn.cymru.com"
+
+    case System.cmd("dig", ["+short", "TXT", query], stderr_to_stdout: true) do
+      {output, 0} when output != "" ->
+        # Response format: "ASN | prefix | CC | registry | date"
+        cleaned = output |> String.trim() |> String.trim("\"")
+
+        case String.split(cleaned, " | ") do
+          [asn, prefix | _rest] ->
+            %{
+              status: :ok,
+              asn: String.trim(asn),
+              prefix: String.trim(prefix)
+            }
+
+          _ ->
+            %{status: :parse_error, raw: output}
+        end
+
+      _ ->
+        %{status: :error, reason: :dns_lookup_failed}
+    end
+  end
+
+  defp lookup_geo(ip_str) do
+    # Use Team Cymru DNS for country code
+    reversed = ip_str |> String.split(".") |> Enum.reverse() |> Enum.join(".")
+    query = "#{reversed}.origin.asn.cymru.com"
+
+    case System.cmd("dig", ["+short", "TXT", query], stderr_to_stdout: true) do
+      {output, 0} when output != "" ->
+        cleaned = output |> String.trim() |> String.trim("\"")
+
+        case String.split(cleaned, " | ") do
+          [_asn, _prefix, cc | _rest] ->
+            %{status: :ok, country_code: String.trim(cc)}
+
+          _ ->
+            %{status: :parse_error}
+        end
+
+      _ ->
+        %{status: :error}
+    end
   end
 end
 

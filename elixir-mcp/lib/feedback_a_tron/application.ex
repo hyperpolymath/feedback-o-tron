@@ -18,6 +18,7 @@ defmodule FeedbackATron.Application do
   def start(_type, _args) do
     children = [
       # Core services
+      FeedbackATron.RateLimiter,
       FeedbackATron.Submitter,
       FeedbackATron.Deduplicator,
       FeedbackATron.AuditLog,
