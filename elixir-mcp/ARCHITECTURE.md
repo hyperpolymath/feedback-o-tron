@@ -1,6 +1,8 @@
-# Observatory: GitHub Intelligence Platform
+# feedback-o-tron Architecture
 
-## Vision
+> **Note**: This document was originally authored for a planned "Observatory" GitHub Intelligence Platform. Much of the component analysis below (Oxigraph, Julia analytics, Nickel config) describes **aspirational/future** capabilities that are not part of the current feedback-o-tron implementation. The current implementation is an autonomous multi-platform bug reporting system. See [README.adoc](../README.adoc) for the actual feature set.
+
+## Original Vision (Observatory — Future)
 
 A comprehensive system for tracking, analyzing, and visualizing GitHub activity across repositories — with local-first data sovereignty, semantic querying, and real-time change tracking.
 

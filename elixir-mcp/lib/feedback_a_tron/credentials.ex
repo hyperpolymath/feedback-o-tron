@@ -21,11 +21,18 @@ defmodule FeedbackATron.Credentials do
     :discord, :reddit
   ]
 
+  alias FeedbackATron.Credentials.FileStore
+
   @doc """
   Load credentials from all available sources.
+
+  Priority (highest first):
+  1. Environment variables
+  2. CLI configs (~/.config/gh/hosts.yml, etc.)
+  3. File-based stores (~/.netrc, ~/.config/feedback-a-tron/credentials.toml)
   """
   def load do
-    %__MODULE__{
+    env_creds = %__MODULE__{
       github: load_github_creds(),
       gitlab: load_gitlab_creds(),
       bitbucket: load_bitbucket_creds(),
@@ -41,6 +48,25 @@ defmodule FeedbackATron.Credentials do
       discord: load_discord_creds(),
       reddit: load_reddit_creds()
     }
+
+    # Merge file-based credentials (lower priority — appended after env/CLI creds).
+    file_creds = FileStore.load_all()
+    merge_file_credentials(env_creds, file_creds)
+  end
+
+  defp merge_file_credentials(creds, file_creds) do
+    Enum.reduce(file_creds, creds, fn {platform, file_entries}, acc ->
+      current = Map.get(acc, platform)
+
+      merged =
+        cond do
+          is_list(current) -> current ++ file_entries
+          is_nil(current) -> file_entries
+          true -> [current | file_entries]
+        end
+
+      Map.put(acc, platform, merged)
+    end)
   end
 
   @doc """

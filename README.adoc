@@ -147,14 +147,14 @@ feedback-o-tron is a production-ready tool for autonomous AI agents to submit bu
 * https://bugzilla.redhat.com/show_bug.cgi?id=2437503[Bug #2437503]: maliit-keyboard crash loop (SIGABRT)
 * https://bugzilla.redhat.com/show_bug.cgi?id=2437504[Bug #2437504]: xwaylandvideobridge portal error
 
-Built for reliability with formal verification via Idris2 for critical ABI definitions and memory safety proofs.
+Built for reliability with an Idris2 ABI specification layer (proofs planned — see link:PROOF-NEEDS.md[PROOF-NEEDS.md] for current status).
 
 === Key Features
 
 * **Multi-platform submission**: GitHub, GitLab, Bitbucket, Codeberg, Bugzilla, Email (6 platforms)
 * **Bugzilla REST API**: Full support for product/component/version targeting
 * **Deduplication**: Prevents duplicate submissions using fuzzy matching (Levenshtein distance)
-* **Formal verification**: Idris2 ABI definitions with dependent type proofs for memory layout correctness
+* **Formal specification**: Idris2 ABI layer (dependent type proofs planned — see PROOF-NEEDS.md)
 * **Credential rotation**: Avoids rate limits by rotating credentials
 * **Audit logging**: Complete JSON-lines format record of all operations
 * **MCP integration**: Works as Claude Code tool or standalone CLI
@@ -367,30 +367,18 @@ MCP configuration in `~/.config/claude/mcp_servers.json`:
 }
 ----
 
-== Formal Verification with Idris2
+== Formal Specification with Idris2 (Planned)
 
-feedback-o-tron uses **Idris2** for formal verification of critical ABI definitions and memory safety guarantees.
+feedback-o-tron has an **Idris2** ABI specification layer for defining platform types and FFI boundaries. Full dependent-type proofs for memory safety and correctness are planned but not yet materialized.
 
-=== ABI Layer (src/abi/)
+NOTE: The original template ABI files (Types.idr, Layout.idr, Foreign.idr) were removed on 2026-03-29 as they contained only scaffolding. See link:PROOF-NEEDS.md[PROOF-NEEDS.md] for what needs to be proven and the current status.
 
-[source,idris]
-----
--- Type-level memory layout proofs
-LayoutCorrect : (t : Type) -> (size : Nat) -> (align : Nat) -> Type
+=== Planned Proofs
 
--- Platform-specific type definitions with formal guarantees
-data PlatformType : Type where
-  GitHub : PlatformType
-  GitLab : PlatformType
-  Bugzilla : PlatformType
-  -- Proven at compile-time to match C ABI
-----
-
-Key modules:
-
-* **Types.idr**: ABI type definitions with dependent type proofs
-* **Layout.idr**: Memory layout correctness proofs
-* **Foreign.idr**: FFI function declarations with verified signatures
+* **Deduplication correctness**: Prove the deduplicator never drops unique entries
+* **Submission atomicity**: Prove submissions fully succeed or fully fail
+* **Memory layout**: Dependent type proofs for ABI layout correctness
+* **Rate limiting fairness**: Prove rate limiting does not permanently block legitimate users
 
 === Integration with Proven Repo
 
@@ -405,14 +393,14 @@ Integration architecture:
 
 [source]
 ----
-Idris2 (Formal Proofs)
+Idris2 (Formal Specifications → Proofs)
    ↓
 Zig FFI (C ABI Bridge)
    ↓
 Elixir/BEAM (Runtime)
 ----
 
-This ensures **provable correctness** at the ABI boundary while maintaining **runtime flexibility** in Elixir.
+This architecture will enable **provable correctness** at the ABI boundary while maintaining **runtime flexibility** in Elixir.
 
 == Architecture
 
@@ -446,10 +434,10 @@ See link:TOPOLOGY.md[TOPOLOGY.md] for a visual architecture map and completion d
 │  - CLI configs (gh, glab)                                  │
 │  - Rotation for rate limit avoidance                       │
 ├─────────────────────────────────────────────────────────────┤
-│                Idris2 ABI Layer (Formal Verification)       │
-│  - Memory layout proofs                                     │
-│  - Type-level correctness guarantees                        │
-│  - FFI safety via Zig C ABI bridge                         │
+│            Idris2 ABI Layer (Formal Specification)           │
+│  - Platform type definitions                                │
+│  - FFI boundary specs via Zig C ABI bridge                  │
+│  - Dependent type proofs planned (see PROOF-NEEDS.md)       │
 └─────────────────────────────────────────────────────────────┘
 ----
 
