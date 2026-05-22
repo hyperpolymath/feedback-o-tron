@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # Integration tests for platform-specific Channel modules.
 #
 # Uses Bypass to mock HTTP endpoints for each platform, verifying

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 defmodule FeedbackATron.Channels.NNTP do
   @moduledoc """
   NNTP (Usenet) channel — NNTPS only (port 563, implicit TLS).

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # Unit tests for FeedbackATron.NetworkVerifier and its sub-modules.
 #
 # These tests verify the module surface and helper logic without

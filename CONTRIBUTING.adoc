@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 = Contributing to feedback-o-tron
 :toc:
 
@@ -108,12 +108,12 @@ Key modules:
 
 == Licensing
 
-All contributions must be licensed under PMPL-1.0-or-later.
+All contributions must be licensed under MPL-2.0.
 Add the SPDX header to all new files:
 
 [source,elixir]
 ----
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 ----
 
 == Reporting Issues

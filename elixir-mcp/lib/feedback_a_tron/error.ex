@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 defmodule FeedbackATron.Error do
   @moduledoc """
   Structured error types for feedback submission operations.

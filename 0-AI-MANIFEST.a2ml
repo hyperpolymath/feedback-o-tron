@@ -60,7 +60,7 @@ ffi/zig/                    # C ABI bridge (future)
 README.adoc                 # Comprehensive usage guide
 CONTRIBUTING.adoc           # Contribution guidelines
 SECURITY.md                 # Security policy
-LICENSE.txt                 # PMPL-1.0-or-later
+LICENSE.txt                 # MPL-2.0
 ```
 
 ## Critical Invariants
@@ -206,7 +206,7 @@ Both submissions validated end-to-end workflow including:
 
 ## License
 
-PMPL-1.0-or-later (Palimpsest License)
+MPL-2.0 (Palimpsest License)
 
-All original code is licensed under PMPL-1.0-or-later.
+All original code is licensed under MPL-2.0.
 Third-party dependencies maintain their original licenses.

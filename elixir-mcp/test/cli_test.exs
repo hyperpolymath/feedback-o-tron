@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # Unit tests for FeedbackATron.CLI argument parsing.
 #
 # The CLI is an escript entry point. These tests exercise parse_args/1

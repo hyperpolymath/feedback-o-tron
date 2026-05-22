@@ -767,7 +767,7 @@ parseJSON : (schema : JSONSchema) -> String -> Either ParseError (JSONValue sche
 
 == License
 
-Licensed under PMPL-1.0-or-later (Palimpsest License).
+Licensed under MPL-2.0 (Palimpsest License).
 
 See link:LICENSE.txt[LICENSE.txt] for details.
 

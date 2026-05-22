@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 defmodule FeedbackATron.Channels.Email do
   @moduledoc """
   Email channel — SMTPS only (port 465, implicit TLS).

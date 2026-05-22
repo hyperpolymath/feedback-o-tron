@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 defmodule FeedbackATron.Channels.Bugzilla do
   @moduledoc """
   Bugzilla channel — HTTPS only (REST API v1).
