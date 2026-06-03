@@ -1,6 +1,10 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 = feedback-o-tron
+image:https://img.shields.io/badge/OpenSSF-Best_Practices-green?logo=openssourcesecurity[OpenSSF Best Practices,link="https://www.bestpractices.dev/en/projects/new?repo_url=https://github.com/hyperpolymath/feedback-o-tron"]
 
-image:https://img.shields.io/badge/License-PMPL--1.0-blue.svg[License: PMPL-1.0,link="https://github.com/hyperpolymath/palimpsest-license"]
+
+image:https://img.shields.io/badge/License-MPL_2.0--1.0-blue.svg[License: MPL-2.0,link="https://github.com/hyperpolymath/palimpsest-license"]
 image:https://img.shields.io/badge/version-1.0.0-blue[Version 1.0.0]
 image:https://img.shields.io/badge/RSR-Certified-gold[RSR Certified]
 image:https://img.shields.io/badge/Idris-inside-purple[Idris Inside]
@@ -767,7 +771,7 @@ parseJSON : (schema : JSONSchema) -> String -> Either ParseError (JSONValue sche
 
 == License
 
-Licensed under MPL-2.0 (Palimpsest License).
+Licensed under MPL-2.0 (MPL-2.0).
 
 See link:LICENSE.txt[LICENSE.txt] for details.
 
