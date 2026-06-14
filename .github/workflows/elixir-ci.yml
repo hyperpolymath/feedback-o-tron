@@ -6,11 +6,12 @@ on:
     paths:
       - 'elixir-mcp/**'
       - '.github/workflows/elixir-ci.yml'
+  # No pull_request paths-filter: Dialyzer is a REQUIRED status check, so it must
+  # report on every PR (a path-filtered required check deadlocks PRs that don't
+  # touch its paths). The "Detect relevant changes" step gates the heavy work; the
+  # non-required test matrix is gated the same way so it doesn't run on every PR.
   pull_request:
     branches: [main]
-    paths:
-      - 'elixir-mcp/**'
-      - '.github/workflows/elixir-ci.yml'
 permissions:
   contents: read
 jobs:
@@ -20,6 +21,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      pull-requests: read   # change-detector reads the PR's file list
     defaults:
       run:
         working-directory: elixir-mcp
@@ -29,12 +31,32 @@ jobs:
         otp: ['26']
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Detect relevant changes
+        id: detect
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PATTERN='^elixir-mcp/'
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
+            if printf '%s\n' "$FILES" | grep -qE "$PATTERN"; then
+              echo "relevant=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "relevant=false" >> "$GITHUB_OUTPUT"; echo "No elixir-mcp changes — pass-through (required-check shim)."
+            fi
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Set up Elixir
+        if: steps.detect.outputs.relevant == 'true'
         uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
         with:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
       - name: Cache deps
+        if: steps.detect.outputs.relevant == 'true'
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
@@ -44,12 +66,16 @@ jobs:
           restore-keys: |
             mix-${{ matrix.elixir }}-${{ matrix.otp }}-
       - name: Install dependencies
+        if: steps.detect.outputs.relevant == 'true'
         run: mix deps.get
       - name: Compile (warnings as errors)
+        if: steps.detect.outputs.relevant == 'true'
         run: mix compile --warnings-as-errors
       - name: Check formatting
+        if: steps.detect.outputs.relevant == 'true'
         run: mix format --check-formatted
       - name: Run tests
+        if: steps.detect.outputs.relevant == 'true'
         run: mix test --trace
   dialyzer:
     name: Dialyzer
@@ -57,17 +83,38 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      pull-requests: read   # change-detector reads the PR's file list
     defaults:
       run:
         working-directory: elixir-mcp
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Detect relevant changes
+        id: detect
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PATTERN='^elixir-mcp/'
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
+            if printf '%s\n' "$FILES" | grep -qE "$PATTERN"; then
+              echo "relevant=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "relevant=false" >> "$GITHUB_OUTPUT"; echo "No elixir-mcp changes — pass-through (required-check shim)."
+            fi
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Set up Elixir
+        if: steps.detect.outputs.relevant == 'true'
         uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
         with:
           elixir-version: '1.17'
           otp-version: '26'
       - name: Cache deps
+        if: steps.detect.outputs.relevant == 'true'
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
@@ -77,7 +124,9 @@ jobs:
           restore-keys: |
             dialyzer-
       - name: Install dependencies
+        if: steps.detect.outputs.relevant == 'true'
         run: mix deps.get
       - name: Run Dialyzer
+        if: steps.detect.outputs.relevant == 'true'
         run: mix dialyzer
         continue-on-error: true
