@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 defmodule FeedbackATron.Channels.NNTP do
   @moduledoc """
   NNTP (Usenet) channel — NNTPS only (port 563, implicit TLS).
