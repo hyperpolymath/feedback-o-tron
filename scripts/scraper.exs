@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 #!/usr/bin/env elixir
 # Multi-repo scraper for feedback-a-tron
 # Scrapes multiple GitHub repos into the Datalog fact store

@@ -1,3 +1,7 @@
+<!--
+SPDX-License-Identifier: MPL-2.0
+Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+-->
 # feedback-o-tron Architecture
 
 > **Note**: This document was originally authored for a planned "Observatory" GitHub Intelligence Platform. Much of the component analysis below (Oxigraph, Julia analytics, Nickel config) describes **aspirational/future** capabilities that are not part of the current feedback-o-tron implementation. The current implementation is an autonomous multi-platform bug reporting system. See [README.adoc](../README.adoc) for the actual feature set.

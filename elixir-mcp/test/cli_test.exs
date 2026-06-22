@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 # Unit tests for FeedbackATron.CLI argument parsing.
 #
 # The CLI is an escript entry point. These tests exercise parse_args/1

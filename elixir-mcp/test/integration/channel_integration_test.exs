@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 # Integration tests for channel adapters using Bypass for HTTP mocking.
 #
 # These tests verify that each HTTP-based channel adapter correctly:
