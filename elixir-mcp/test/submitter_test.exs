@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 # Unit tests for FeedbackATron.Submitter.
 #
 # The Submitter is a GenServer that dispatches issue submissions to
