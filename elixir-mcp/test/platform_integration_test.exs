@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 # Integration tests for platform-specific Channel modules.
 #
 # Uses Bypass to mock HTTP endpoints for each platform, verifying

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 # Unit tests for FeedbackATron.Deduplicator.
 #
 # The deduplicator is a GenServer backed by an ETS table.  Each test case

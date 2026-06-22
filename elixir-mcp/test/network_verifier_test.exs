@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 # Unit tests for FeedbackATron.NetworkVerifier and its sub-modules.
 #
 # These tests verify the module surface and helper logic without

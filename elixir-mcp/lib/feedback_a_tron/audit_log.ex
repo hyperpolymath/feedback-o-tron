@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 defmodule FeedbackATron.AuditLog do
   @moduledoc """
   Comprehensive audit logging for all FeedbackATron operations.
