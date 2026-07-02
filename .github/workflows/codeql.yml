@@ -27,7 +27,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - language: javascript-typescript
+          # feedback-o-tron is Elixir-primary (Zig/Nickel/Julia support code);
+          # CodeQL supports none of those languages, so a javascript-typescript
+          # matrix found no source and failed every run with "no source seen".
+          # `actions` is the one CodeQL language present here — it analyses the
+          # repo's GitHub Actions workflows for CI-security issues.
+          - language: actions
             build-mode: none
     steps:
       - name: Checkout
