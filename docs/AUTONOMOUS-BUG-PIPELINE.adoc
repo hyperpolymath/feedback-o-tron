@@ -1,0 +1,252 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= Autonomous Bug-Reporting Pipeline — Cross-Repo Architecture
+Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+:toc:
+:icons: font
+:source-highlighter: rouge
+
+[IMPORTANT]
+====
+*Status: DRAFT / TARGET architecture.* This document describes a pipeline that spans
+three repositories (`feedback-o-tron`, `boj-server`, `boj-server-cartridges`). Most of it
+is *not yet built* — see <<reality>>. It exists to *define* the project that the
+2026-06-28 issue triplet (boj-server #262/#263/#264) failed to capture, and to make the
+built-vs-proposed boundary explicit and honest. Nothing here should be read as a
+description of shipping behaviour except where a row says `BUILT`.
+====
+
+toc::[]
+
+== Provenance
+
+* *2026-06-28 15:35–15:39* — three issues filed in `boj-server` (#262 "[Deps]", #263 "[Perf]",
+  #264 "[Feature]"). They are one set ("Issue 1 / Issue 2 / Issue 3") but each landed in the
+  wrong issue template with a broken title. They describe *runtime plumbing* (containerisation,
+  caching, tracing) for the pipeline below — not the pipeline itself.
+* *2026-06-28 16:44* — an architecture diagram was drawn (WhatsApp image). It is the real
+  deliverable and the source of truth for this document.
+* *2026-07-01* — this document written to consolidate the diagram and to record the honest
+  gap between it and the code, so the project can be tracked. Canonical location: this file.
+  The tracking issue lives in `boj-server` (per owner decision: doc here, tracker there).
+
+== 1. Purpose
+
+An AI agent (or a system) hits a crash. Instead of emitting a cryptic stack trace, the
+pipeline turns that event into a *well-formed, deduplicated, schema-correct bug report* filed
+to the right forge — autonomously. The design intent is that the report is shaped by the
+*target repository's own issue template*, hydrated with real context, verified at an ABI
+boundary, and dispatched to GitHub / GitLab / Bugzilla.
+
+The 2026-06-28 diagram, transcribed:
+
+[source,text]
+----
+Agent / System Crash Trigger
+        │  Initiate Bug Report
+        ▼
+boj-server Gateway
+        │  ① Fetch Template Schema
+        ▼
+.github/ISSUE_TEMPLATE/bug.yml
+        │  ② Pass Schema + System State
+        ▼
+feedback-o-tron Synthesis Engine
+        ├── Hydrate Questions
+        └── Environment Questions
+        ▼
+┌─ Autonomous Fulfilment & Verification ────────────────┐
+│   LLM Context: Trajectory & Logs                       │
+│   NetworkVerifier / OS Inspection                      │
+│         └── Deduplicator: Fuzzy Match Existing Issues  │
+└────────────────────────────────────────────────────────┘
+        │  ③ Clean Validated Payload
+        ▼
+Idris2 Verified ABI Layer
+        │  ④ Secure Multi-Platform Dispatch
+        ▼
+GitHub / GitLab / Bugzilla API
+----
+
+== 2. Component roles (per-repo split)
+
+[cols="1,1,3",options="header"]
+|===
+| Component | Repo | Intended responsibility
+
+| *Gateway*
+| `boj-server`
+| Entry point. Fetch the target repo's issue-template schema (`.github/ISSUE_TEMPLATE/bug.yml`),
+  gather system state, and hand both to the Synthesis Engine as a boj cartridge invocation.
+
+| *Synthesis Engine*
+| `feedback-o-tron`
+| Hydrate the template's questions ("Hydrate" + "Environment") from LLM trajectory/logs and
+  from `NetworkVerifier` / OS inspection; deduplicate against existing issues; emit a clean,
+  schema-valid payload.
+
+| *Verified ABI Layer*
+| `feedback-o-tron` (+ `proven` types)
+| Validate the payload's memory layout and shape at a formally-specified Idris2/Zig FFI
+  boundary before it leaves the process.
+
+| *Dispatch*
+| `feedback-o-tron` channels
+| File the validated payload to GitHub / GitLab / Bugzilla (and other forges).
+
+| *Cartridge packaging*
+| `boj-server-cartridges` / `boj-server/cartridges`
+| Package the Synthesis Engine as a first-class boj cartridge so the Gateway can invoke it.
+|===
+
+== 3. The four wire contracts
+
+[cols="1,3",options="header"]
+|===
+| ID | Contract
+
+| *C1* | `Fetch Template Schema` — Gateway → `.github/ISSUE_TEMPLATE/bug.yml`
+| *C2* | `Pass Schema + System State` — (schema + state) → Synthesis Engine
+| *C3* | `Clean Validated Payload` — Synthesis + Dedup → Idris2 Verified ABI Layer
+| *C4* | `Secure Multi-Platform Dispatch` — Idris2 ABI → GitHub / GitLab / Bugzilla API
+|===
+
+[[reality]]
+== 4. Current reality vs target (verified 2026-07-01)
+
+Ground-truthed against the code in both local repos. Statuses: *BUILT* (real working code),
+*PARTIAL* (real code, but unwired / bypassed / inert), *PROPOSED* (docs/diagram only, no code).
+
+[cols="1,1,3",options="header"]
+|===
+| Contract / element | Status | Evidence
+
+| *C1* Fetch Template Schema
+| PROPOSED
+| `boj-server` Gateway (`elixir/lib/boj_rest/router.ex`) exposes only 5 cartridge endpoints
+  (`/health`, `/menu`, `/cartridges`, `/cartridge/:name`, `POST /cartridge/:name/invoke`).
+  No code fetches an issue-template schema. There is *no* `bug.yml` anywhere — both repos ship
+  plain Markdown templates (`bug_report.md`), not `.yml` issue forms.
+
+| *C2* Pass Schema + System State
+| PROPOSED
+| There is no "Synthesis Engine" (grep `synthesis` = 0 hits). `feedback-o-tron` has *no HTTP
+  intake* (no Bandit/Plug/Cowboy in the supervision tree); its only entry point is the MCP tool
+  `submit_feedback`, whose `input_schema` requires `[title, body, repo]` — a plain issue, not a
+  schema + system-state. The one cross-repo wire (`cartridges/feedback-mcp/mod.js` → POST
+  `http://127.0.0.1:7722`) targets a backend `feedback-o-tron` does not serve.
+
+| *C3* Clean Validated Payload → Idris2 ABI
+| PROPOSED
+| `feedback-o-tron` has *zero* `.idr`/`.ipkg` files — all `src/abi/*.idr` were removed
+  (`PROOF-NEEDS.md` L27–31: "only RSR template scaffolding, no proofs"). `ffi/zig/src/main.zig`
+  references phantom `src/abi/*.idr` and its `feedback_o_tron_process` is a stub
+  (`_ = input; return .ok`). The Elixir core never calls any NIF/FFI. The `Deduplicator`
+  algorithm is real (`deduplicator.ex`, normalized Levenshtein — comment mislabels it
+  "Jaro-Winkler"), but `Deduplicator.record/3` is *never called*, so its indexes stay empty and
+  `check/1` always returns `{:ok, :unique}` at runtime — the dedup is *inert as integrated*.
+
+| *C4* Secure Multi-Platform Dispatch
+| PARTIAL
+| Dispatch is *real*: `channels/github.ex` shells `gh issue create`; `channels/gitlab.ex` shells
+  `glab issue create`; `channels/bugzilla.ex` does a real REST v1 POST; 14+ channels registered;
+  README documents 2 real Bugzilla bugs filed (#2437503/#2437504). *But* it runs entirely in
+  Elixir and does *not* originate from any Idris2 ABI — the "via Idris2 ABI" source in the
+  diagram is fictional.
+
+| MCP server + `submit_feedback` tool
+| BUILT
+| Working JSON-RPC MCP server over stdio (`mcp/server.ex`), exposes `submit_feedback` +
+  `migration_observe`. The real front door.
+
+| Audit logging
+| BUILT
+| `audit_log.ex` — JSON-lines trail with rotation + secret-sanitisation, wired from `Submitter`.
+
+| NetworkVerifier
+| PARTIAL
+| 607 lines of real probing (ping/traceroute/dig/openssl/crt.sh/RPKI), supervised
+  (`application.ex:29`) — but *never called* by `Submitter` or any MCP tool. A disconnected
+  island; does network probing, not OS/environment inspection for a payload.
+
+| Migration-observation subsystem
+| PARTIAL
+| Real but off by default; observes ReScript *code*-migrations, not LLM trajectories. Likely the
+  origin of the diagram's "gather logs" box, but it does not do what the diagram claims.
+|===
+
+*Net:* the terminal dispatch (C4) is real; the template-fetch (C1), synthesis/schema-passing (C2),
+and verified-ABI (C3) stages that give the diagram its shape are unbuilt.
+
+[[identity]]
+== 5. OPEN DECISION — the `feedback-o-tron` vs `feedback-mcp` identity problem
+
+The single most under-defined thing in this project. Today these are *two unrelated programs
+that share a name*:
+
+[cols="1,2,2",options="header"]
+|===
+| | `feedback-o-tron` (this repo) | `feedback-mcp` (boj cartridge)
+
+| What it is | v1.0.0 Elixir bug-*filing* engine | ~448-line Zig FFI *sentiment counter*
+| Tools | `submit_feedback`, `migration_observe` | `register_channel`, `start_collecting`, `submit`, `get_stats`
+| Data model | issue → 15+ forge channels | 8-slot in-memory tally, fork-per-request (no persistence)
+| Runtime | MCP stdio / escript; shells `gh`/`glab`, REST | `mod.js` → HTTP `127.0.0.1:7722`
+| Shared code | — | *none* — separate reimplementation, name only
+|===
+
+`EXPLAINME.adoc` says "feedback-o-tron is a cartridge itself" and the cartridge `README.adoc`
+claims it "implements feedback-o-tron / is the self-dogfooding loop." *Both are false in code.*
+The cartridge is even internally stale (README lists 10 tools; only 4 exist; `cartridge.json`
+declares an `so_path` that isn't built).
+
+*Decision required (D0):* choose one —
+
+. *Converge* — make `feedback-mcp` the cartridge packaging of the real `feedback-o-tron` engine
+  (cartridge invokes the engine; retire the sentiment-counter or rename it). This is what the
+  diagram assumes ("feedback-o-tron Synthesis Engine" reachable via the Gateway).
+. *Separate* — accept they are different products; rename one to end the collision
+  (e.g. cartridge → `sentiment-mcp`), and define a *new* first-class cartridge that wraps the engine.
+
+The rest of this architecture assumes *Converge*; if *Separate* is chosen, C2's cartridge wire
+must be redrawn to a new cartridge name.
+
+== 6. Prerequisites & gaps to close (ordered)
+
+. *Resolve D0* (<<identity>>) — nothing downstream is well-defined until the identity is fixed.
+. *Author `bug.yml` issue forms* — the diagram's C1 assumes structured `.yml` issue forms;
+  today only Markdown templates exist. No schema = nothing to fetch or hydrate.
+. *Give `feedback-o-tron` a real intake* — either an HTTP backend on the port the cartridge
+  already targets (`127.0.0.1:7722`) or a boj-cartridge invocation path, accepting
+  `{template_schema, system_state}` — not just `{title, body, repo}`.
+. *Build the Synthesis/Hydration step* — a module that maps template fields → hydrated answers
+  from LLM trajectory/logs + `NetworkVerifier`/OS inspection.
+. *Wire the Deduplicator* — call `Deduplicator.record/3` so dedup is not inert.
+. *Decide the ABI story* — either build a real Idris2/Zig verified boundary for the payload, or
+  *drop the "Idris-inside" claim*. Do not ship a badge with no code.
+
+== 7. Honesty debt to retire (independent of the build)
+
+These are current false-impression items surfaced during verification; fixing them is cheap and
+should not wait for the pipeline:
+
+* `README.adoc` badges "Idris-inside" / "Production Ready" — no `.idr` files exist in the repo.
+* `TOPOLOGY.md` asserts "100% / v1.0.0 Production Ready" for every box, while
+  `elixir-mcp/ARCHITECTURE.md` admits much is "aspirational/future." Reconcile to reality.
+* `Deduplicator.record/3` never called → dedup inert. Either wire it or note it as disabled.
+* `NetworkVerifier` supervised but never invoked → note as a standalone tool, not a pipeline stage.
+* `ABI-FFI-README.md` is still an unfilled `{{PROJECT}}` RSR template.
+* `deduplicator.ex` comment says "Jaro-Winkler"; the code computes normalized Levenshtein.
+
+== 8. Relationship to the issue tracker
+
+* *Umbrella / tracking issue* (in `boj-server`) — captures this whole pipeline and links every
+  sub-issue. This is the "fan-in" the triplet lacked.
+* *Re-filed sub-issues* — #262/#263/#264 re-filed cleanly as *feature* issues (they are all
+  features, not a Deps advisory / a Perf report / an empty Feature):
+  ** OCI containerisation & immutable runtime isolation (was #262)
+  ** Offline pre-fetch & stale-while-revalidate cartridge caching (was #263)
+  ** OpenTelemetry tracing across the boj ↔ ABI ↔ cartridge boundary (was #264)
+* *Missing core-pipeline issues* — the actual "main effort," never filed: C1 template-fetch,
+  C2 synthesis/hydration, C3 verified-ABI payload, plus D0 (the identity decision). These are
+  the issues that make the pipeline exist; the triplet only hardens the box it would run in.
