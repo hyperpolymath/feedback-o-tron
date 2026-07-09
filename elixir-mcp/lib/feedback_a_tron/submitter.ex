@@ -119,7 +119,9 @@ defmodule FeedbackATron.Submitter do
   @impl true
   def handle_call({:submit_batch, issues, opts}, _from, state) do
     results = Enum.map(issues, fn issue ->
-      {:ok, id, result} = handle_call({:submit, issue, opts}, nil, state)
+      # handle_call({:submit, ...}) returns a GenServer {:reply, payload, state}
+      # 3-tuple; destructure the reply payload, not a bare {:ok, id, result}.
+      {:reply, {:ok, id, result}, _new_state} = handle_call({:submit, issue, opts}, nil, state)
       {id, result}
     end)
     {:reply, {:ok, results}, state}

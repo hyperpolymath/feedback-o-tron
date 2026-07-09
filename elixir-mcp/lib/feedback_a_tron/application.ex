@@ -30,10 +30,29 @@ defmodule FeedbackATron.Application do
     ]
 
     children = maybe_add_mcp_server(children)
+    children = maybe_add_http_intake(children)
     children = maybe_add_migration_observer(children)
 
     opts = [strategy: :one_for_one, name: FeedbackATron.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  # Optional HTTP intake — the localhost wire the boj gateway/`bug-filing-mcp`
+  # cartridge drives to reach the engine (docs/AUTONOMOUS-BUG-PIPELINE.adoc, C2/D0).
+  # Off by default; bound to loopback only.
+  defp maybe_add_http_intake(children) do
+    if http_intake_enabled?() do
+      children ++
+        [
+          {Bandit,
+           plug: FeedbackATron.HTTPIntake.Router,
+           scheme: :http,
+           ip: http_intake_ip(),
+           port: http_intake_port()}
+        ]
+    else
+      children
+    end
   end
 
   defp maybe_add_mcp_server(children) do
@@ -80,6 +99,41 @@ defmodule FeedbackATron.Application do
       end
 
     env_on? || Enum.any?(System.argv(), &(&1 == "--mcp-server"))
+  end
+
+  defp http_intake_enabled? do
+    env_on?(System.get_env("FEEDBACK_A_TRON_HTTP")) ||
+      Enum.any?(System.argv(), &(&1 == "--http-intake"))
+  end
+
+  defp http_intake_port do
+    case System.get_env("FEEDBACK_A_TRON_HTTP_PORT") do
+      nil ->
+        7722
+
+      value ->
+        case Integer.parse(String.trim(value)) do
+          {port, _} -> port
+          :error -> 7722
+        end
+    end
+  end
+
+  # Loopback only by default; override with FEEDBACK_A_TRON_HTTP_BIND (e.g. "0.0.0.0").
+  defp http_intake_ip do
+    bind = System.get_env("FEEDBACK_A_TRON_HTTP_BIND") || "127.0.0.1"
+
+    case :inet.parse_address(String.to_charlist(String.trim(bind))) do
+      {:ok, ip} -> ip
+      {:error, _} -> {127, 0, 0, 1}
+    end
+  end
+
+  defp env_on?(nil), do: false
+
+  defp env_on?(value) do
+    normalized = value |> String.trim() |> String.downcase()
+    Enum.member?(["1", "true", "yes", "on"], normalized)
   end
 
   defp migration_observer_enabled? do
