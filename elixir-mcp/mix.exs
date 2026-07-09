@@ -41,6 +41,10 @@ defmodule FeedbackATron.MixProject do
       # HTTP client
       {:req, "~> 0.5"},
 
+      # HTTP intake server (optional localhost bridge for the boj gateway/cartridge)
+      {:bandit, "~> 1.5"},
+      {:plug, "~> 1.16"},
+
       # JSON
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.9"},
