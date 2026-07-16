@@ -97,26 +97,29 @@ defmodule FeedbackATron.Submitter do
           platforms
           |> Enum.map(fn platform ->
             with :ok <- RateLimiter.check(platform),
-                 :ok <- maybe_dedupe(dedupe, platform, issue),
-                 {:ok, cred} <- Credentials.get(state.credentials, platform) do
+                 :ok <- maybe_dedupe(dedupe, platform, issue) do
+              # A dry run is a preview: it still passes rate-limit and dedup
+              # checks above, but must not require credentials.
               if dry_run do
                 {:ok, %{platform: platform, status: :dry_run, would_submit: issue}}
               else
-                result = Retry.with_backoff(fn -> do_submit(platform, issue, cred, opts) end)
+                with {:ok, cred} <- Credentials.get(state.credentials, platform) do
+                  result = Retry.with_backoff(fn -> do_submit(platform, issue, cred, opts) end)
 
-                # Record only real successes: never dry runs (which
-                # short-circuit above), never errors. Recording feeds the
-                # deduplicator so recurring themes are recognized as recurring.
-                case result do
-                  {:ok, submission_result} ->
-                    RateLimiter.record(platform)
-                    Deduplicator.record(issue, platform, submission_result)
+                  # Record only real successes: never dry runs (which
+                  # short-circuit above), never errors. Recording feeds the
+                  # deduplicator so recurring themes are recognized as recurring.
+                  case result do
+                    {:ok, submission_result} ->
+                      RateLimiter.record(platform)
+                      Deduplicator.record(issue, platform, submission_result)
 
-                  _ ->
-                    :ok
+                    _ ->
+                      :ok
+                  end
+
+                  result
                 end
-
-                result
               end
             end
           end)
