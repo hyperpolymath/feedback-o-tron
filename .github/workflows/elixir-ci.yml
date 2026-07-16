@@ -34,17 +34,24 @@ jobs:
       - name: Detect relevant changes
         id: detect
         working-directory: ${{ github.workspace }}
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           PATTERN='^elixir-mcp/'
+          # Fail-safe detector (estate required-gate convention): default to
+          # running the suite; skip ONLY when a successful diff against the
+          # base tip shows nothing relevant. Uses git (two-dot tree diff, so
+          # shallow checkouts work) instead of `gh api`, whose non-JSON error
+          # responses hard-failed this step (#51).
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            FILES=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
-            if printf '%s\n' "$FILES" | grep -qE "$PATTERN"; then
-              echo "relevant=true" >> "$GITHUB_OUTPUT"
+            if git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" \
+               && FILES=$(git diff --name-only FETCH_HEAD HEAD); then
+              if printf '%s\n' "$FILES" | grep -qE "$PATTERN"; then
+                echo "relevant=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "relevant=false" >> "$GITHUB_OUTPUT"; echo "No elixir-mcp changes — pass-through (required-check shim)."
+              fi
             else
-              echo "relevant=false" >> "$GITHUB_OUTPUT"; echo "No elixir-mcp changes — pass-through (required-check shim)."
+              echo "relevant=true" >> "$GITHUB_OUTPUT"; echo "Detector could not compute the diff — failing safe (run=true)."
             fi
           else
             echo "relevant=true" >> "$GITHUB_OUTPUT"
@@ -92,17 +99,24 @@ jobs:
       - name: Detect relevant changes
         id: detect
         working-directory: ${{ github.workspace }}
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           PATTERN='^elixir-mcp/'
+          # Fail-safe detector (estate required-gate convention): default to
+          # running the suite; skip ONLY when a successful diff against the
+          # base tip shows nothing relevant. Uses git (two-dot tree diff, so
+          # shallow checkouts work) instead of `gh api`, whose non-JSON error
+          # responses hard-failed this step (#51).
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            FILES=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
-            if printf '%s\n' "$FILES" | grep -qE "$PATTERN"; then
-              echo "relevant=true" >> "$GITHUB_OUTPUT"
+            if git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" \
+               && FILES=$(git diff --name-only FETCH_HEAD HEAD); then
+              if printf '%s\n' "$FILES" | grep -qE "$PATTERN"; then
+                echo "relevant=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "relevant=false" >> "$GITHUB_OUTPUT"; echo "No elixir-mcp changes — pass-through (required-check shim)."
+              fi
             else
-              echo "relevant=false" >> "$GITHUB_OUTPUT"; echo "No elixir-mcp changes — pass-through (required-check shim)."
+              echo "relevant=true" >> "$GITHUB_OUTPUT"; echo "Detector could not compute the diff — failing safe (run=true)."
             fi
           else
             echo "relevant=true" >> "$GITHUB_OUTPUT"
