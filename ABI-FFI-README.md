@@ -2,388 +2,120 @@
 SPDX-License-Identifier: CC-BY-SA-4.0
 Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 -->
-{{~ Aditionally delete this line and fill out the template below ~}}
 
-# {{PROJECT}} ABI/FFI Documentation
+# feedback-o-tron ABI/FFI Documentation
 
-## Overview
+This file describes what actually exists, honestly. Three layers, three
+different maturity levels:
 
-This library follows the **Hyperpolymath RSR Standard** for ABI and FFI design:
+| Layer | Path | Status |
+|---|---|---|
+| Verified contract spec (Idris2) | `src/abi/FeedbackOTron/Contract.idr` | **REAL** — compiles, proofs machine-checked, CI-gated |
+| Runtime implementation (Elixir) | `elixir-mcp/lib/feedback_a_tron/synthesis/form_validator.ex` | **REAL** — the validator on the live dispatch path |
+| C-ABI FFI (Zig) | `ffi/zig/src/main.zig` | **STUB** — scaffolding only, not wired to anything |
 
-- **ABI (Application Binary Interface)** defined in **Idris2** with formal proofs
-- **FFI (Foreign Function Interface)** implemented in **Zig** for C compatibility
-- **Generated C headers** bridge Idris2 ABI to Zig FFI
-- **Any language** can call through standard C ABI
+## 1. The verified contract spec (Idris2) — REAL
 
-## Architecture
+`src/abi/FeedbackOTron/Contract.idr` (package `src/abi/feedback-o-tron.ipkg`,
+depends on `base` only) states the form-validation contract once, totally,
+and proves that its `validate` function enforces it. It is type-checked in
+CI by `.github/workflows/proofs.yml` on every push/PR touching `src/abi/**`,
+under pinned Idris2 0.7.0.
 
-```
-┌─────────────────────────────────────────────┐
-│  ABI Definitions (Idris2)                   │
-│  src/abi/                                   │
-│  - Types.idr      (Type definitions)        │
-│  - Layout.idr     (Memory layout proofs)    │
-│  - Foreign.idr    (FFI declarations)        │
-└─────────────────┬───────────────────────────┘
-                  │
-                  │ generates (at compile time)
-                  ▼
-┌─────────────────────────────────────────────┐
-│  C Headers (auto-generated)                 │
-│  generated/abi/{{project}}.h                │
-└─────────────────┬───────────────────────────┘
-                  │
-                  │ imported by
-                  ▼
-┌─────────────────────────────────────────────┐
-│  FFI Implementation (Zig)                   │
-│  ffi/zig/src/main.zig                       │
-│  - Implements C-compatible functions        │
-│  - Zero-cost abstractions                   │
-│  - Memory-safe by default                   │
-└─────────────────┬───────────────────────────┘
-                  │
-                  │ compiled to lib{{project}}.so/.a
-                  ▼
-┌─────────────────────────────────────────────┐
-│  Any Language via C ABI                     │
-│  - Rust, ReScript, Julia, Python, etc.     │
-└─────────────────────────────────────────────┘
-```
+The model:
 
-## Directory Structure
+- `Field` — `fieldId`, `label`, `required : Bool`, `options : List String`,
+  `fieldKind` (`Input | Textarea | Dropdown | Checkboxes | Markdown`)
+- `Form` — a list of `Field`s
+- `Answers` — `List (String, String)` (field id ↦ answer text)
+- `Violation` — `RequiredMissing fieldId | UnknownField key | InvalidOption fieldId value`
+- `validate : Form -> Answers -> Either (List Violation) ValidPayload`
 
-```
-{{project}}/
-├── src/
-│   ├── abi/                    # ABI definitions (Idris2)
-│   │   ├── Types.idr           # Core type definitions with proofs
-│   │   ├── Layout.idr          # Memory layout verification
-│   │   └── Foreign.idr         # FFI function declarations
-│   └── lib/                    # Core library (any language)
-│
-├── ffi/
-│   └── zig/                    # FFI implementation (Zig)
-│       ├── build.zig           # Build configuration
-│       ├── build.zig.zon       # Dependencies
-│       ├── src/
-│       │   └── main.zig        # C-compatible FFI implementation
-│       ├── test/
-│       │   └── integration_test.zig
-│       └── include/
-│           └── {{project}}.h   # C header (optional, can be generated)
-│
-├── generated/                  # Auto-generated files
-│   └── abi/
-│       └── {{project}}.h       # Generated from Idris2 ABI
-│
-└── bindings/                   # Language-specific wrappers (optional)
-    ├── rust/
-    ├── rescript/
-    └── julia/
-```
+The central safety device is `ValidPayload`: its data constructor is
+**private** (the type is `export`, the constructor is not), so the only way
+to obtain a `ValidPayload` is to get `validate` to say `Right`. Holding one
+is machine-checked evidence the gate passed. `getAnswers : ValidPayload ->
+Answers` reads the validated answers back out.
 
-## Why Idris2 for ABI?
+### Proved lemmas (no `believe_me`, no `postulate`, no `assert_total`)
 
-### 1. **Formal Verification**
+Everything is `%default total`; the trusted base is **empty** and CI enforces
+that with a source audit (`trusted-base` job in `proofs.yml`).
 
-Idris2's dependent types allow proving properties about the ABI at compile-time:
+| Lemma | Statement |
+|---|---|
+| `validCompleteness` | `IsRight (validate f a)` → `AllRequiredAnswered f a` (Bool-reflection: `allRequiredAnswered f a = True`) — a successful validate means every required non-markdown field was answered |
+| `validNoUnknownFields` | `IsRight (validate f a)` → `noUnknownFields f a = True` — no answer key outside the form's non-markdown field ids |
+| `validOptionsValid` | `IsRight (validate f a)` → `allOptionsValid f a = True` — every dropdown answer is one of its field's options |
+| `validGate` | `IsRight (validate f a)` → `checksPass f a = True` (the master gate; the three above are its `&&`-eliminations) |
+| `checksPassValidates` | converse: `checksPass f a = True` → `IsRight (validate f a)` — validate is pinned to the boolean spec in both directions |
+| `validateAnswersPreserved` | `validate f a = Right vp` → `getAnswers vp = a` — validate never invents or drops answers |
+| `emptyFormEmptyAnswersOk` | sanity witness: the empty form with no answers validates |
 
-```idris
--- Prove struct size is correct
-public export
-exampleStructSize : HasSize ExampleStruct 16
+The proofs are deliberately by-inspection: `validate` is *defined via* the
+boolean reflection (`validateGo (checksPass f a) (violations f a) a`), so the
+lemmas follow by case analysis and `&&`-elimination, not heroics.
 
--- Prove field alignment is correct
-public export
-fieldAligned : Divides 8 (offsetOf ExampleStruct.field)
-
--- Prove ABI is platform-compatible
-public export
-abiCompatible : Compatible (ABI 1) (ABI 2)
-```
-
-### 2. **Type Safety**
-
-Encode invariants that C/Zig cannot express:
-
-```idris
--- Non-null pointer guaranteed at type level
-data Handle : Type where
-  MkHandle : (ptr : Bits64) -> {auto 0 nonNull : So (ptr /= 0)} -> Handle
-
--- Array with length proof
-data Buffer : (n : Nat) -> Type where
-  MkBuffer : Vect n Byte -> Buffer n
-```
-
-### 3. **Platform Abstraction**
-
-Platform-specific types with compile-time selection:
-
-```idris
-CInt : Platform -> Type
-CInt Linux = Bits32
-CInt Windows = Bits32
-
-CSize : Platform -> Type
-CSize Linux = Bits64
-CSize Windows = Bits64
-```
-
-### 4. **Safe Evolution**
-
-Prove that new ABI versions are backward-compatible:
-
-```idris
--- Compiler enforces compatibility
-abiUpgrade : ABI 1 -> ABI 2
-abiUpgrade old = MkABI2 {
-  -- Must preserve all v1 fields
-  v1_compat = old,
-  -- Can add new fields
-  new_features = defaults
-}
-```
-
-## Why Zig for FFI?
-
-### 1. **C ABI Compatibility**
-
-Zig exports C-compatible functions naturally:
-
-```zig
-export fn library_function(param: i32) i32 {
-    return param * 2;
-}
-```
-
-### 2. **Memory Safety**
-
-Compile-time safety without runtime overhead:
-
-```zig
-// Null check enforced at compile time
-const handle = init() orelse return error.InitFailed;
-defer free(handle);
-```
-
-### 3. **Cross-Compilation**
-
-Built-in cross-compilation to any platform:
-
-```bash
-zig build -Dtarget=x86_64-linux
-zig build -Dtarget=aarch64-macos
-zig build -Dtarget=x86_64-windows
-```
-
-### 4. **Zero Dependencies**
-
-No runtime, no libc required (unless explicitly needed):
-
-```zig
-// Minimal binary size
-pub const lib = @import("std");
-// Only includes what you use
-```
-
-## Building
-
-### Build FFI Library
-
-```bash
-cd ffi/zig
-zig build                         # Build debug
-zig build -Doptimize=ReleaseFast  # Build optimized
-zig build test                    # Run tests
-```
-
-### Generate C Header from Idris2 ABI
+Check locally:
 
 ```bash
 cd src/abi
-idris2 --cg c-header Types.idr -o ../../generated/abi/{{project}}.h
+idris2 --typecheck feedback-o-tron.ipkg
 ```
 
-### Cross-Compile
+## 2. The runtime implementation (Elixir) — REAL
 
-```bash
-cd ffi/zig
+`FeedbackATron.Synthesis.FormValidator.validate/2` is the runtime
+implementation of the same contract, on the live synthesis/dispatch path.
+The correspondence, field by field:
 
-# Linux x86_64
-zig build -Dtarget=x86_64-linux
+| Contract (Idris2) | Runtime (Elixir) | Meaning |
+|---|---|---|
+| `RequiredMissing fieldId` | `%{error: :required_missing}` | a required field is unanswered (Elixir also treats a whitespace-only answer, or an empty checkbox list, as missing) |
+| `UnknownField key` | `%{error: :unknown_field}` | an answer key that is not a non-markdown field id of the form |
+| `InvalidOption fieldId value` | `%{error: :invalid_option}` | a dropdown answer that is not one of the field's declared options |
+| — (unrepresentable: `Answers` is typed `List (String, String)`) | `%{error: :not_a_string}` | a non-string answer value; the Idris contract rules this out by type, the dynamically-typed runtime must check it |
+| markdown fields excluded from `knownFields` | markdown fields rejected from `known_fields`, answers to them are `:unknown_field` | markdown blocks are display-only |
+| `Left` collects **all** violations (required first in form order, then options, then unknown keys) | `{:error, errors}` collects all violations (form-order field errors, then sorted unknown keys) | nothing fails fast; the caller sees the whole picture |
+| `Right ValidPayload` (private constructor) | `:ok` | gate passed |
 
-# macOS ARM64
-zig build -Dtarget=aarch64-macos
+Divergences to know about (deliberate, documented rather than hidden):
 
-# Windows x86_64
-zig build -Dtarget=x86_64-windows
-```
+- The Elixir validator trims whitespace before deciding blankness; the Idris
+  spec models blankness as `v /= ""` without trimming.
+- Checkbox answers are lists in Elixir; the Idris spec models all answers as
+  strings, so checkbox-list type checks live only in the runtime.
+- Nothing *mechanically* connects the two today — the Elixir module mirrors
+  the spec by construction and code review, not by extraction. See §4.
 
-## Usage
+## 3. The Zig FFI — STUB
 
-### From C
+`ffi/zig/src/main.zig` is **scaffolding, not a working FFI**. It exports
+generic `feedback_o_tron_init/free/process`-style lifecycle functions and
+refers in comments to `src/abi/Types.idr` and `src/abi/Foreign.idr`, which
+**do not exist** — the real Idris module is `FeedbackOTron/Contract.idr` and
+no C headers are generated from it. Nothing in the running system calls this
+library. It is kept as the intended shape of a future C-ABI surface and must
+not be described as functional until it is.
 
-```c
-#include "{{project}}.h"
+## 4. What full enforcement would look like (not built yet)
 
-int main() {
-    void* handle = {{project}}_init();
-    if (!handle) return 1;
-
-    int result = {{project}}_process(handle, 42);
-    if (result != 0) {
-        const char* err = {{project}}_last_error();
-        fprintf(stderr, "Error: %s\n", err);
-    }
-
-    {{project}}_free(handle);
-    return 0;
-}
-```
-
-Compile with:
-```bash
-gcc -o example example.c -l{{project}} -L./zig-out/lib
-```
-
-### From Idris2
-
-```idris
-import {{PROJECT}}.ABI.Foreign
-
-main : IO ()
-main = do
-  Just handle <- init
-    | Nothing => putStrLn "Failed to initialize"
-
-  Right result <- process handle 42
-    | Left err => putStrLn $ "Error: " ++ errorDescription err
-
-  free handle
-  putStrLn "Success"
-```
-
-### From Rust
-
-```rust
-#[link(name = "{{project}}")]
-extern "C" {
-    fn {{project}}_init() -> *mut std::ffi::c_void;
-    fn {{project}}_free(handle: *mut std::ffi::c_void);
-    fn {{project}}_process(handle: *mut std::ffi::c_void, input: u32) -> i32;
-}
-
-fn main() {
-    unsafe {
-        let handle = {{project}}_init();
-        assert!(!handle.is_null());
-
-        let result = {{project}}_process(handle, 42);
-        assert_eq!(result, 0);
-
-        {{project}}_free(handle);
-    }
-}
-```
-
-### From Julia
-
-```julia
-const lib{{project}} = "lib{{project}}"
-
-function init()
-    handle = ccall((:{{project}}_init, lib{{project}}), Ptr{Cvoid}, ())
-    handle == C_NULL && error("Failed to initialize")
-    handle
-end
-
-function process(handle, input)
-    result = ccall((:{{project}}_process, lib{{project}}), Cint, (Ptr{Cvoid}, UInt32), handle, input)
-    result
-end
-
-function cleanup(handle)
-    ccall((:{{project}}_free, lib{{project}}), Cvoid, (Ptr{Cvoid},), handle)
-end
-
-# Usage
-handle = init()
-try
-    result = process(handle, 42)
-    println("Result: $result")
-finally
-    cleanup(handle)
-end
-```
-
-## Testing
-
-### Unit Tests (Zig)
-
-```bash
-cd ffi/zig
-zig build test
-```
-
-### Integration Tests
-
-```bash
-cd ffi/zig
-zig build test-integration
-```
-
-### ABI Verification (Idris2)
-
-```idris
--- Compile-time verification
-%runElab verifyABI
-
--- Runtime checks
-main : IO ()
-main = do
-  verifyLayoutsCorrect
-  verifyAlignmentsCorrect
-  putStrLn "ABI verification passed"
-```
-
-## Contributing
-
-When modifying the ABI/FFI:
-
-1. **Update ABI first** (`src/abi/*.idr`)
-   - Modify type definitions
-   - Update proofs
-   - Ensure backward compatibility
-
-2. **Generate C header**
-   ```bash
-   idris2 --cg c-header src/abi/Types.idr -o generated/abi/{{project}}.h
-   ```
-
-3. **Update FFI implementation** (`ffi/zig/src/main.zig`)
-   - Implement new functions
-   - Match ABI types exactly
-
-4. **Add tests**
-   - Unit tests in Zig
-   - Integration tests
-   - ABI verification tests
-
-5. **Update documentation**
-   - Function signatures
-   - Usage examples
-   - Migration guide (if breaking changes)
+The honest end state is an Idris-derived validator on the dispatch path —
+either code generated from `Contract.idr` (via a C library that the Zig FFI
+wraps and Elixir calls through a NIF/port), or a conformance test suite
+generated from the spec that the Elixir validator must pass in CI. Until
+then, the guarantee chain is: spec proved (Idris, CI-gated) → implementation
+mirrors spec (review + unit tests). Full FFI enforcement is tracked in a
+follow-up issue: (follow-up issue: filed at PR time).
 
 ## License
 
-MPL-2.0
+- Code: MPL-2.0
+- This document: CC-BY-SA-4.0
 
 ## See Also
 
-- [Idris2 Documentation](https://idris2.readthedocs.io)
-- [Zig Documentation](https://ziglang.org/documentation/master/)
-- [Rhodium Standard Repositories](https://github.com/hyperpolymath/rhodium-standard-repositories)
-- [FFI Migration Guide](../ffi-migration-guide.md)
-- [ABI Migration Guide](../abi-migration-guide.md)
+- `src/abi/FeedbackOTron/Contract.idr` — the contract, with per-lemma docs
+- `.github/workflows/proofs.yml` — the CI gate (type-check + trusted-base audit)
+- `elixir-mcp/lib/feedback_a_tron/synthesis/form_validator.ex` — the runtime validator
+- [Idris2 documentation](https://idris2.readthedocs.io)
