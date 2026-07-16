@@ -41,4 +41,54 @@ defmodule FeedbackATron.HTTPIntake.RouterTest do
     assert conn.status == 404
     assert %{"error" => "not_found"} = Jason.decode!(conn.resp_body)
   end
+
+  test "unknown POST route returns 404 json" do
+    conn = json_post("/api/v1/nope", %{})
+    assert conn.status == 404
+    assert %{"error" => "not_found"} = Jason.decode!(conn.resp_body)
+  end
+
+  describe "POST /api/v1/research_feedback" do
+    test "rejects missing required fields" do
+      conn = json_post("/api/v1/research_feedback", %{title: "t"})
+      assert conn.status == 400
+      body = Jason.decode!(conn.resp_body)
+      assert body["error"] == "missing_required_fields"
+      assert "repo" in body["fields"]
+    end
+
+    test "treats blank strings as missing" do
+      conn = json_post("/api/v1/research_feedback", %{repo: "o/r", title: "   "})
+      assert conn.status == 400
+      body = Jason.decode!(conn.resp_body)
+      assert "title" in body["fields"]
+    end
+  end
+
+  describe "POST /api/v1/synthesize_feedback" do
+    test "rejects missing required fields" do
+      conn = json_post("/api/v1/synthesize_feedback", %{repo: "o/r"})
+      assert conn.status == 400
+      body = Jason.decode!(conn.resp_body)
+      assert body["error"] == "missing_required_fields"
+      assert "raw_feedback" in body["fields"]
+    end
+
+    test "zero-signal abuse is rejected with a stated reason, never filed" do
+      # Doctrine: the gate is usefulness, not tone. A hostile string with no
+      # actionable signal must come back rejected — with the reason stated —
+      # rather than being shaped into a report or silently dropped.
+      conn =
+        json_post("/api/v1/synthesize_feedback", %{
+          raw_feedback: "you idiots, this garbage is trash and you all suck",
+          repo: "owner/repo"
+        })
+
+      assert conn.status == 200
+      body = Jason.decode!(conn.resp_body)
+      assert body["rejected"] == true
+      assert is_binary(body["reason"])
+      assert body["reason"] != ""
+    end
+  end
 end

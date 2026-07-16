@@ -14,17 +14,20 @@ defmodule FeedbackATron.HTTPIntake.Router do
 
   ## Routes
 
-  - `GET  /health`                    → `{"status":"ok"}`
-  - `POST /api/v1/submit_feedback`    → body `{title, body, repo, platforms?, labels?, dry_run?, skip_dedupe?}`
+  - `GET  /health`                     → `{"status":"ok"}`
+  - `POST /api/v1/submit_feedback`     → body `{title, body, repo, platforms?, labels?, dry_run?, skip_dedupe?, template?, template_data?}`
+  - `POST /api/v1/research_feedback`   → body `{repo, title, body?, limit?, include_templates?}`
+  - `POST /api/v1/synthesize_feedback` → body `{raw_feedback, repo, context?, system_state?, template?, network_probe?}`
 
-  The request/response shapes intentionally match the MCP tool's `input_schema` so a
+  The request/response shapes intentionally match the MCP tools' `input_schema` so a
   cartridge can forward the same arguments unchanged.
   """
 
   use Plug.Router
   require Logger
 
-  alias FeedbackATron.Submitter
+  alias FeedbackATron.{Params, Submitter}
+  alias FeedbackATron.Synthesis.{Research, Synthesizer}
 
   plug(:match)
   plug(Plug.Parsers, parsers: [:json], pass: ["application/json"], json_decoder: Jason)
@@ -42,6 +45,12 @@ defmodule FeedbackATron.HTTPIntake.Router do
             {:ok, submission_id, results} ->
               send_json(conn, 200, format_results(submission_id, results))
 
+            {:error, {:schema_violation, violations}} ->
+              send_json(conn, 422, %{error: "schema_violation", violations: violations})
+
+            {:error, {:template_unavailable, why}} ->
+              send_json(conn, 502, %{error: "template_unavailable", detail: inspect(why)})
+
             {:error, reason} ->
               Logger.error("HTTP submit_feedback failed: #{inspect(reason)}")
               send_json(conn, 502, %{error: "submission_failed", detail: inspect(reason)})
@@ -57,6 +66,84 @@ defmodule FeedbackATron.HTTPIntake.Router do
     end
   end
 
+  post "/api/v1/research_feedback" do
+    try do
+      params = conn.body_params
+
+      case missing_fields(params, ["repo", "title"]) do
+        [] ->
+          request = %{
+            repo: params["repo"],
+            title: params["title"],
+            body: params["body"]
+          }
+
+          opts =
+            []
+            |> put_opt(:limit, params["limit"])
+            |> put_opt(:include_templates, params["include_templates"])
+
+          case Research.research(request, opts) do
+            {:ok, result} ->
+              send_json(conn, 200, result)
+
+            {:error, reason} ->
+              Logger.error("HTTP research_feedback failed: #{inspect(reason)}")
+              send_json(conn, 502, %{error: "research_failed", detail: inspect(reason)})
+          end
+
+        missing ->
+          send_json(conn, 400, %{error: "missing_required_fields", fields: missing})
+      end
+    rescue
+      exception ->
+        Logger.error("HTTP research_feedback exception: #{Exception.message(exception)}")
+        send_json(conn, 500, %{error: "internal_error", detail: Exception.message(exception)})
+    end
+  end
+
+  post "/api/v1/synthesize_feedback" do
+    try do
+      params = conn.body_params
+
+      case missing_fields(params, ["raw_feedback", "repo"]) do
+        [] ->
+          request = %{
+            raw_feedback: params["raw_feedback"],
+            repo: params["repo"],
+            context: params["context"] || %{},
+            system_state: params["system_state"] || %{}
+          }
+
+          opts =
+            []
+            |> put_opt(:template, params["template"])
+            |> put_opt(:network_probe, params["network_probe"])
+
+          case Synthesizer.synthesize(request, opts) do
+            {:ok, result} ->
+              send_json(conn, 200, result)
+
+            # A rejection is a successful response: the caller must learn the
+            # stated reason. Rejected feedback is audit-logged, never filed.
+            {:reject, rejection} ->
+              send_json(conn, 200, %{rejected: true, reason: rejection.reason})
+
+            {:error, reason} ->
+              Logger.error("HTTP synthesize_feedback failed: #{inspect(reason)}")
+              send_json(conn, 502, %{error: "synthesis_failed", detail: inspect(reason)})
+          end
+
+        missing ->
+          send_json(conn, 400, %{error: "missing_required_fields", fields: missing})
+      end
+    rescue
+      exception ->
+        Logger.error("HTTP synthesize_feedback exception: #{Exception.message(exception)}")
+        send_json(conn, 500, %{error: "internal_error", detail: Exception.message(exception)})
+    end
+  end
+
   match _ do
     send_json(conn, 404, %{error: "not_found"})
   end
@@ -65,57 +152,44 @@ defmodule FeedbackATron.HTTPIntake.Router do
 
   # Mirrors FeedbackATron.MCP.Tools.SubmitFeedback: required [title, body, repo].
   defp validate(params) when is_map(params) do
-    missing =
-      ["title", "body", "repo"]
-      |> Enum.filter(fn k -> blank?(Map.get(params, k)) end)
+    case missing_fields(params, ["title", "body", "repo"]) do
+      [] ->
+        issue = %{
+          title: params["title"],
+          body: params["body"],
+          repo: params["repo"],
+          template: params["template"],
+          template_data: params["template_data"]
+        }
 
-    if missing == [] do
-      issue = %{
-        title: params["title"],
-        body: params["body"],
-        repo: params["repo"]
-      }
+        opts = [
+          platforms: Params.parse_platforms(params["platforms"]),
+          labels: params["labels"] || [],
+          dry_run: params["dry_run"] || false,
+          dedupe: not (params["skip_dedupe"] || false)
+        ]
 
-      opts = [
-        platforms: parse_platforms(params["platforms"]),
-        labels: params["labels"] || [],
-        dry_run: params["dry_run"] || false,
-        dedupe: not (params["skip_dedupe"] || false)
-      ]
+        {:ok, issue, opts}
 
-      {:ok, issue, opts}
-    else
-      {:error, missing}
+      missing ->
+        {:error, missing}
     end
   end
 
   defp validate(_), do: {:error, ["title", "body", "repo"]}
 
+  defp missing_fields(params, required) when is_map(params) do
+    Enum.filter(required, fn k -> blank?(Map.get(params, k)) end)
+  end
+
+  defp missing_fields(_params, required), do: required
+
   defp blank?(nil), do: true
   defp blank?(v) when is_binary(v), do: String.trim(v) == ""
   defp blank?(_), do: false
 
-  defp parse_platforms(nil), do: [:github]
-
-  defp parse_platforms(platforms) when is_list(platforms) do
-    platforms
-    |> Enum.map(&platform_atom/1)
-    |> Enum.filter(& &1)
-    |> case do
-      [] -> [:github]
-      list -> list
-    end
-  end
-
-  defp parse_platforms(_), do: [:github]
-
-  defp platform_atom("github"), do: :github
-  defp platform_atom("gitlab"), do: :gitlab
-  defp platform_atom("bitbucket"), do: :bitbucket
-  defp platform_atom("codeberg"), do: :codeberg
-  defp platform_atom("bugzilla"), do: :bugzilla
-  defp platform_atom("email"), do: :email
-  defp platform_atom(_), do: nil
+  defp put_opt(opts, _key, nil), do: opts
+  defp put_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp format_results(submission_id, results) do
     formatted =
