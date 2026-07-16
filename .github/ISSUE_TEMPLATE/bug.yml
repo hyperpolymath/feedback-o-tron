@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: MPL-2.0
+name: "Bug report"
+description: "Report something that is broken or behaving unexpectedly."
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: "What happened?"
+      description: "Describe the problem. What did you see?"
+    validations:
+      required: true
+  - type: textarea
+    id: repro-steps
+    attributes:
+      label: "Steps to reproduce"
+      description: "Exact steps that trigger the problem, one per line."
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected behaviour"
+      description: "What did you expect to happen instead?"
+  - type: input
+    id: version
+    attributes:
+      label: "Version"
+      placeholder: "e.g. 1.0.0 / commit SHA"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: "Component"
+      description: "Which part of feedback-o-tron is affected?"
+      options:
+        - "MCP server"
+        - "HTTP intake"
+        - "Synthesis"
+        - "Channels/dispatch"
+        - "CLI"
+        - "Other"
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Relevant logs / stack trace"
+      description: "Paste any logs or stack traces. This block is rendered as shell, so no backticks needed."
+      render: shell
+  - type: textarea
+    id: environment
+    attributes:
+      label: "Environment"
+      description: "OS, OTP/Elixir versions, network specifics"
