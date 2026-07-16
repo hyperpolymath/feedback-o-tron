@@ -189,9 +189,7 @@ defmodule FeedbackATron.ReportGenerator do
     ## Regressions
 
     #{if length(regressions) > 0 do
-      regressions
-      |> Enum.map(fn r -> "- **#{r.repo}**: #{r.description}" end)
-      |> Enum.join("\n")
+      regressions |> Enum.map(fn r -> "- **#{r.repo}**: #{r.description}" end) |> Enum.join("\n")
     else
       "No regressions detected."
     end}
@@ -227,7 +225,9 @@ defmodule FeedbackATron.ReportGenerator do
   defp delta(_, _), do: "-"
 
   defp format_duration(seconds) when seconds < 60, do: "#{seconds}s"
-  defp format_duration(seconds) when seconds < 3600, do: "#{div(seconds, 60)}m #{rem(seconds, 60)}s"
+
+  defp format_duration(seconds) when seconds < 3600,
+    do: "#{div(seconds, 60)}m #{rem(seconds, 60)}s"
 
   defp format_duration(seconds),
     do: "#{div(seconds, 3600)}h #{div(rem(seconds, 3600), 60)}m"
@@ -238,7 +238,11 @@ defmodule FeedbackATron.ReportGenerator do
     after_h = get_in(session.after_snapshot, ["migration_metrics", "health_score"]) || 0.0
     before_d = get_in(session.before_snapshot, ["migration_metrics", "deprecated_api_count"]) || 0
     after_d = get_in(session.after_snapshot, ["migration_metrics", "deprecated_api_count"]) || 0
-    duration = if session.ended_at, do: DateTime.diff(session.ended_at, session.started_at, :second), else: 0
+
+    duration =
+      if session.ended_at,
+        do: DateTime.diff(session.ended_at, session.started_at, :second),
+        else: 0
 
     "| #{repo} | #{Float.round(after_h - before_h, 3)} | #{before_d - after_d} | #{format_duration(duration)} |"
   end
@@ -301,12 +305,15 @@ defmodule FeedbackATron.ReportGenerator do
     """
   end
 
-  defp generate_recommendations(before, after_m) do
+  defp generate_recommendations(_before, after_m) do
     recs = []
 
     recs =
       if (after_m["deprecated_api_count"] || 0) > 0 do
-        recs ++ ["- Migrate remaining #{after_m["deprecated_api_count"]} deprecated API calls to @rescript/core"]
+        recs ++
+          [
+            "- Migrate remaining #{after_m["deprecated_api_count"]} deprecated API calls to @rescript/core"
+          ]
       else
         recs
       end
@@ -315,7 +322,9 @@ defmodule FeedbackATron.ReportGenerator do
       case after_m["config_format"] do
         f when f in ["BsConfig", "Both"] ->
           recs ++ ["- Migrate bsconfig.json to rescript.json"]
-        _ -> recs
+
+        _ ->
+          recs
       end
 
     recs =
