@@ -16,6 +16,8 @@ defmodule FeedbackATron.Deduplicator do
   use GenServer
   require Logger
 
+  alias FeedbackATron.TextSimilarity
+
   @similarity_threshold 0.85
   @ets_table :feedback_submissions
 
@@ -175,7 +177,7 @@ defmodule FeedbackATron.Deduplicator do
     # Update indexes
     new_state = %{state |
       submissions: Map.put(state.submissions, hash, submission),
-      title_index: Map.put(state.title_index, normalize_title(title), hash),
+      title_index: Map.put(state.title_index, TextSimilarity.normalize_title(title), hash),
       hash_index: Map.put(state.hash_index, hash, submission)
     }
 
@@ -187,89 +189,22 @@ defmodule FeedbackATron.Deduplicator do
   # Private functions
 
   defp compute_hash(title, body) do
-    content = "#{normalize_title(title)}:#{normalize_body(body)}"
+    content = "#{TextSimilarity.normalize_title(title)}:#{TextSimilarity.normalize_body(body)}"
     :crypto.hash(:sha256, content) |> Base.encode16(case: :lower) |> binary_part(0, 16)
   end
 
-  defp normalize_title(title) do
-    title
-    |> String.downcase()
-    |> String.replace(~r/[^\w\s]/, "")
-    |> String.replace(~r/\s+/, " ")
-    |> String.trim()
-  end
-
-  defp normalize_body(body) do
-    normalized = body
-    |> String.downcase()
-    |> String.replace(~r/\s+/, " ")
-    |> String.trim()
-
-    # Take first 500 bytes safely (after normalization)
-    size = byte_size(normalized)
-    if size > 500 do
-      binary_part(normalized, 0, 500)
-    else
-      normalized
-    end
-  end
-
   defp find_similar_titles(title, title_index) do
-    normalized = normalize_title(title)
+    normalized = TextSimilarity.normalize_title(title)
 
     title_index
     |> Enum.filter(fn {indexed_title, _hash} ->
-      similarity(normalized, indexed_title) >= @similarity_threshold
+      TextSimilarity.similarity(normalized, indexed_title) >= @similarity_threshold
     end)
     |> Enum.map(fn {indexed_title, hash} ->
-      %{title: indexed_title, hash: hash, similarity: similarity(normalized, indexed_title)}
+      %{title: indexed_title, hash: hash, similarity: TextSimilarity.similarity(normalized, indexed_title)}
     end)
     |> Enum.sort_by(& &1.similarity, :desc)
     |> Enum.take(5)
-  end
-
-  defp similarity(s1, s2) do
-    # Jaro-Winkler similarity
-    cond do
-      s1 == s2 -> 1.0
-      String.length(s1) == 0 or String.length(s2) == 0 -> 0.0
-      true ->
-        # Simple implementation - use TheFuzz library in production
-        len1 = String.length(s1)
-        len2 = String.length(s2)
-        max_len = max(len1, len2)
-        distance = levenshtein(s1, s2)
-        1.0 - (distance / max_len)
-    end
-  end
-
-  defp levenshtein(s1, s2) do
-    s1_len = String.length(s1)
-    s2_len = String.length(s2)
-
-    if s1_len == 0, do: s2_len,
-    else: (if s2_len == 0, do: s1_len,
-    else: do_levenshtein(String.graphemes(s1), String.graphemes(s2), s1_len, s2_len))
-  end
-
-  defp do_levenshtein(s1, s2, _len1, len2) do
-    # Dynamic programming approach
-    row = 0..len2 |> Enum.to_list()
-
-    {final_row, _} = Enum.reduce(Enum.with_index(s1), {row, 0}, fn {c1, i}, {prev_row, _} ->
-      new_row = Enum.reduce(Enum.with_index(s2), [i + 1], fn {c2, j}, acc ->
-        cost = if c1 == c2, do: 0, else: 1
-        val = Enum.min([
-          Enum.at(acc, j) + 1,           # deletion
-          Enum.at(prev_row, j + 1) + 1,  # insertion
-          Enum.at(prev_row, j) + cost    # substitution
-        ])
-        acc ++ [val]
-      end)
-      {new_row, i + 1}
-    end)
-
-    List.last(final_row)
   end
 
   defp truncate(string, max_length) do
