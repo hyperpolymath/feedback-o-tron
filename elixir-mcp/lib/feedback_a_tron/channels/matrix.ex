@@ -64,7 +64,8 @@ defmodule FeedbackATron.Channels.Matrix do
               msgtype: "m.text",
               body: "**#{issue.title}**\n\n#{issue.body}",
               format: "org.matrix.custom.html",
-              formatted_body: "<h3>#{html_escape(issue.title)}</h3>\n#{markdown_to_html(issue.body)}"
+              formatted_body:
+                "<h3>#{html_escape(issue.title)}</h3>\n#{markdown_to_html(issue.body)}"
             }
 
           :plain ->
@@ -92,11 +93,12 @@ defmodule FeedbackATron.Channels.Matrix do
 
       case Req.put(url, json: body, headers: headers, receive_timeout: 15_000) do
         {:ok, %{status: 200, body: %{"event_id" => event_id}}} ->
-          {:ok, %{
-            platform: :matrix,
-            url: "https://matrix.to/#/#{room_id}/#{event_id}",
-            event_id: event_id
-          }}
+          {:ok,
+           %{
+             platform: :matrix,
+             url: "https://matrix.to/#/#{room_id}/#{event_id}",
+             event_id: event_id
+           }}
 
         {:ok, %{status: status, body: error}} ->
           {:error, %{platform: :matrix, status: status, error: error}}

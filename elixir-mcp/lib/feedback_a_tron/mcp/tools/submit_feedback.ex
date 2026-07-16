@@ -107,6 +107,7 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
         formatted = format_results(submission_id, results)
         text = format_text(formatted)
         {:ok, [%{type: "text", text: text}]}
+
       {:error, reason} ->
         Logger.error("MCP submit_feedback failed: #{inspect(reason)}")
         {:error, reason}
@@ -118,20 +119,26 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
   end
 
   defp format_results(submission_id, results) do
-    formatted = Enum.map(results, fn
-      {:ok, %{platform: platform, url: url}} ->
-        %{platform: platform, status: "success", url: url}
-      {:ok, %{platform: platform, status: :dry_run, would_submit: issue}} ->
-        %{platform: platform, status: "dry_run", title: issue.title}
-      {:error, %{platform: platform, error: error}} ->
-        %{platform: platform, status: "error", error: inspect(error)}
-      {:error, {:duplicate_found, similar}} ->
-        %{status: "skipped", reason: "duplicate", similar_issues: similar}
-      {:error, {:similar_found, matches}} ->
-        %{status: "skipped", reason: "similar_found", similar_issues: matches}
-      {:error, other} ->
-        %{status: "error", error: inspect(other)}
-    end)
+    formatted =
+      Enum.map(results, fn
+        {:ok, %{platform: platform, url: url}} ->
+          %{platform: platform, status: "success", url: url}
+
+        {:ok, %{platform: platform, status: :dry_run, would_submit: issue}} ->
+          %{platform: platform, status: "dry_run", title: issue.title}
+
+        {:error, %{platform: platform, error: error}} ->
+          %{platform: platform, status: "error", error: inspect(error)}
+
+        {:error, {:duplicate_found, similar}} ->
+          %{status: "skipped", reason: "duplicate", similar_issues: similar}
+
+        {:error, {:similar_found, matches}} ->
+          %{status: "skipped", reason: "similar_found", similar_issues: matches}
+
+        {:error, other} ->
+          %{status: "error", error: inspect(other)}
+      end)
 
     %{
       submission_id: submission_id,

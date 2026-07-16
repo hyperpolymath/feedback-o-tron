@@ -81,6 +81,7 @@ defmodule FeedbackATron.MCP.Server do
     port = parse_int(env_port) || Keyword.get(opts, :tcp_port, 7979)
 
     env_bind = System.get_env("FEEDBACK_A_TRON_MCP_TCP_BIND")
+
     binds =
       case env_bind do
         nil -> Keyword.get(opts, :tcp_bind, ["127.0.0.1"])
@@ -144,7 +145,13 @@ defmodule FeedbackATron.MCP.Server do
     Enum.each(binds, fn bind ->
       case parse_ip(bind) do
         {:ok, ip} ->
-          case :gen_tcp.listen(port, [:binary, packet: :line, active: false, reuseaddr: true, ip: ip]) do
+          case :gen_tcp.listen(port, [
+                 :binary,
+                 packet: :line,
+                 active: false,
+                 reuseaddr: true,
+                 ip: ip
+               ]) do
             {:ok, listen_socket} ->
               Logger.info("MCP TCP listening on #{bind}:#{port}")
               spawn_link(fn -> accept_loop(listen_socket, state) end)
@@ -203,14 +210,17 @@ defmodule FeedbackATron.MCP.Server do
     case Protocol.decode(line) do
       {:ok, %{"method" => "initialize", "id" => id}} ->
         response =
-          Protocol.encode_response(%{
-            "protocolVersion" => "2024-11-05",
-            "serverInfo" => %{
-              "name" => state.name,
-              "version" => state.version
+          Protocol.encode_response(
+            %{
+              "protocolVersion" => "2024-11-05",
+              "serverInfo" => %{
+                "name" => state.name,
+                "version" => state.version
+              },
+              "capabilities" => state.capabilities
             },
-            "capabilities" => state.capabilities
-          }, id)
+            id
+          )
 
         send_fun.(response)
 

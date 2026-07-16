@@ -54,7 +54,8 @@ defmodule FeedbackATron.Channels.Reddit do
     subreddit = opts[:subreddit]
 
     if is_nil(subreddit) do
-      {:error, %{platform: :reddit, error: "subreddit option is required (e.g. [subreddit: \"somesub\"])"}}
+      {:error,
+       %{platform: :reddit, error: "subreddit option is required (e.g. [subreddit: \"somesub\"])"}}
     else
       with {:ok, _ips} <- SecureDNS.resolve("www.reddit.com"),
            {:ok, _ips} <- SecureDNS.resolve("oauth.reddit.com"),
@@ -84,11 +85,12 @@ defmodule FeedbackATron.Channels.Reddit do
       {"Content-Type", "application/x-www-form-urlencoded"}
     ]
 
-    form_body = URI.encode_query(%{
-      grant_type: "password",
-      username: cred.username,
-      password: cred.password
-    })
+    form_body =
+      URI.encode_query(%{
+        grant_type: "password",
+        username: cred.username,
+        password: cred.password
+      })
 
     case Req.post(auth_url, body: form_body, headers: headers, receive_timeout: 15_000) do
       {:ok, %{status: 200, body: %{"access_token" => token}}} ->
@@ -110,11 +112,12 @@ defmodule FeedbackATron.Channels.Reddit do
     submit_url = "https://oauth.reddit.com/api/submit"
 
     # Build the post body with repo context if available
-    post_body = if issue[:repo] do
-      "#{issue.body}\n\n---\n*Repository: #{issue.repo}*"
-    else
-      issue.body
-    end
+    post_body =
+      if issue[:repo] do
+        "#{issue.body}\n\n---\n*Repository: #{issue.repo}*"
+      else
+        issue.body
+      end
 
     headers = [
       {"Authorization", "bearer #{access_token}"},
@@ -122,13 +125,14 @@ defmodule FeedbackATron.Channels.Reddit do
       {"Content-Type", "application/x-www-form-urlencoded"}
     ]
 
-    form_body = URI.encode_query(%{
-      api_type: "json",
-      kind: "self",
-      sr: subreddit,
-      title: issue.title,
-      text: post_body
-    })
+    form_body =
+      URI.encode_query(%{
+        api_type: "json",
+        kind: "self",
+        sr: subreddit,
+        title: issue.title,
+        text: post_body
+      })
 
     case Req.post(submit_url, body: form_body, headers: headers, receive_timeout: 15_000) do
       {:ok, %{status: 200, body: %{"json" => %{"data" => %{"permalink" => permalink}}}}} ->

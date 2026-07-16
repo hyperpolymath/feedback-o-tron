@@ -56,7 +56,9 @@ defmodule FeedbackATron.RetryTest do
         Retry.with_backoff(
           fn ->
             Agent.update(agent, &(&1 + 1))
-            {:error, %FeedbackATron.Error.AuthenticationError{platform: :github, reason: "bad token"}}
+
+            {:error,
+             %FeedbackATron.Error.AuthenticationError{platform: :github, reason: "bad token"}}
           end,
           max_attempts: 5,
           base_delay_ms: 10
@@ -82,7 +84,8 @@ defmodule FeedbackATron.RetryTest do
       )
 
       callbacks = Agent.get(agent, & &1)
-      assert length(callbacks) == 2  # 2 retries before giving up on attempt 3
+      # 2 retries before giving up on attempt 3
+      assert length(callbacks) == 2
       Agent.stop(agent)
     end
   end
@@ -103,14 +106,16 @@ defmodule FeedbackATron.RetryTest do
 
     test "auth errors are not retryable" do
       refute Retry.retryable?(%FeedbackATron.Error.AuthenticationError{
-        platform: :github, reason: "bad"
-      })
+               platform: :github,
+               reason: "bad"
+             })
     end
 
     test "validation errors are not retryable" do
       refute Retry.retryable?(%FeedbackATron.Error.ValidationError{
-        field: "title", reason: "too short"
-      })
+               field: "title",
+               reason: "too short"
+             })
     end
 
     test "4xx status codes are not retryable" do
@@ -120,8 +125,10 @@ defmodule FeedbackATron.RetryTest do
 
     test "rate limit errors are retryable" do
       assert Retry.retryable?(%FeedbackATron.Error.RateLimitError{
-        platform: :github, resets_at: nil, remaining: 0
-      })
+               platform: :github,
+               resets_at: nil,
+               remaining: 0
+             })
     end
   end
 end

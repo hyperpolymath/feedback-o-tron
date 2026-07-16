@@ -26,9 +26,14 @@ defmodule FeedbackATron.Channels.SourceHut do
   @impl true
   def validate_creds(cred) do
     cond do
-      is_nil(cred[:token]) -> {:error, "SourceHut personal access token required"}
-      is_nil(cred[:tracker]) -> {:error, "SourceHut tracker name required (e.g. ~user/tracker-name)"}
-      true -> :ok
+      is_nil(cred[:token]) ->
+        {:error, "SourceHut personal access token required"}
+
+      is_nil(cred[:tracker]) ->
+        {:error, "SourceHut tracker name required (e.g. ~user/tracker-name)"}
+
+      true ->
+        :ok
     end
   end
 
@@ -62,11 +67,13 @@ defmodule FeedbackATron.Channels.SourceHut do
           }
 
           labels = opts[:labels] || cred[:default_labels] || []
-          variables = if labels != [] do
-            put_in(variables, [:input, :labels], labels)
-          else
-            variables
-          end
+
+          variables =
+            if labels != [] do
+              put_in(variables, [:input, :labels], labels)
+            else
+              variables
+            end
 
           headers = [
             {"Authorization", "Bearer #{cred.token}"},
@@ -79,11 +86,13 @@ defmodule FeedbackATron.Channels.SourceHut do
           case Req.post(gql_url, json: body, headers: headers, receive_timeout: 15_000) do
             {:ok, %{status: 200, body: %{"data" => %{"submitTicket" => ticket}}}} ->
               ticket_ref = ticket["ref"]
-              {:ok, %{
-                platform: :sourcehut,
-                url: "#{api_base}/#{tracker}/#{ticket_ref}",
-                ticket_id: ticket["id"]
-              }}
+
+              {:ok,
+               %{
+                 platform: :sourcehut,
+                 url: "#{api_base}/#{tracker}/#{ticket_ref}",
+                 ticket_id: ticket["id"]
+               }}
 
             {:ok, %{status: 200, body: %{"errors" => errors}}} ->
               {:error, %{platform: :sourcehut, error: errors}}

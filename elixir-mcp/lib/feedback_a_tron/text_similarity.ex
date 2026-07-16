@@ -23,14 +23,18 @@ defmodule FeedbackATron.TextSimilarity do
   @spec similarity(String.t(), String.t()) :: float()
   def similarity(s1, s2) do
     cond do
-      s1 == s2 -> 1.0
-      String.length(s1) == 0 or String.length(s2) == 0 -> 0.0
+      s1 == s2 ->
+        1.0
+
+      String.length(s1) == 0 or String.length(s2) == 0 ->
+        0.0
+
       true ->
         len1 = String.length(s1)
         len2 = String.length(s2)
         max_len = max(len1, len2)
         distance = levenshtein(s1, s2)
-        1.0 - (distance / max_len)
+        1.0 - distance / max_len
     end
   end
 
@@ -45,9 +49,13 @@ defmodule FeedbackATron.TextSimilarity do
     s1_len = String.length(s1)
     s2_len = String.length(s2)
 
-    if s1_len == 0, do: s2_len,
-    else: (if s2_len == 0, do: s1_len,
-    else: do_levenshtein(String.graphemes(s1), String.graphemes(s2), s1_len, s2_len))
+    if s1_len == 0,
+      do: s2_len,
+      else:
+        if(s2_len == 0,
+          do: s1_len,
+          else: do_levenshtein(String.graphemes(s1), String.graphemes(s2), s1_len, s2_len)
+        )
   end
 
   @doc """
@@ -69,13 +77,15 @@ defmodule FeedbackATron.TextSimilarity do
   """
   @spec normalize_body(String.t()) :: String.t()
   def normalize_body(body) do
-    normalized = body
-    |> String.downcase()
-    |> String.replace(~r/\s+/, " ")
-    |> String.trim()
+    normalized =
+      body
+      |> String.downcase()
+      |> String.replace(~r/\s+/, " ")
+      |> String.trim()
 
     # Take first 500 bytes safely (after normalization)
     size = byte_size(normalized)
+
     if size > 500 do
       binary_part(normalized, 0, 500)
     else
@@ -89,18 +99,27 @@ defmodule FeedbackATron.TextSimilarity do
     # Dynamic programming approach
     row = 0..len2 |> Enum.to_list()
 
-    {final_row, _} = Enum.reduce(Enum.with_index(s1), {row, 0}, fn {c1, i}, {prev_row, _} ->
-      new_row = Enum.reduce(Enum.with_index(s2), [i + 1], fn {c2, j}, acc ->
-        cost = if c1 == c2, do: 0, else: 1
-        val = Enum.min([
-          Enum.at(acc, j) + 1,           # deletion
-          Enum.at(prev_row, j + 1) + 1,  # insertion
-          Enum.at(prev_row, j) + cost    # substitution
-        ])
-        acc ++ [val]
+    {final_row, _} =
+      Enum.reduce(Enum.with_index(s1), {row, 0}, fn {c1, i}, {prev_row, _} ->
+        new_row =
+          Enum.reduce(Enum.with_index(s2), [i + 1], fn {c2, j}, acc ->
+            cost = if c1 == c2, do: 0, else: 1
+
+            val =
+              Enum.min([
+                # deletion
+                Enum.at(acc, j) + 1,
+                # insertion
+                Enum.at(prev_row, j + 1) + 1,
+                # substitution
+                Enum.at(prev_row, j) + cost
+              ])
+
+            acc ++ [val]
+          end)
+
+        {new_row, i + 1}
       end)
-      {new_row, i + 1}
-    end)
 
     List.last(final_row)
   end

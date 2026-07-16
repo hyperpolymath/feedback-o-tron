@@ -257,21 +257,36 @@ defmodule FeedbackATron.Synthesis.TemplateFetcherTest do
         %{"name" => "PULL_REQUEST_TEMPLATE.md", "type" => "file"}
       ]
 
-      Bypass.expect_once(bypass, "GET", "/repos/acme/widget/contents/.github/ISSUE_TEMPLATE", fn conn ->
-        assert {"accept", "application/vnd.github+json"} in conn.req_headers
+      Bypass.expect_once(
+        bypass,
+        "GET",
+        "/repos/acme/widget/contents/.github/ISSUE_TEMPLATE",
+        fn conn ->
+          assert {"accept", "application/vnd.github+json"} in conn.req_headers
 
-        conn
-        |> Plug.Conn.put_resp_content_type("application/json")
-        |> Plug.Conn.resp(200, Jason.encode!(listing))
-      end)
+          conn
+          |> Plug.Conn.put_resp_content_type("application/json")
+          |> Plug.Conn.resp(200, Jason.encode!(listing))
+        end
+      )
 
-      Bypass.expect_once(bypass, "GET", "/acme/widget/HEAD/.github/ISSUE_TEMPLATE/bug.yml", fn conn ->
-        Plug.Conn.resp(conn, 200, @bug_yaml)
-      end)
+      Bypass.expect_once(
+        bypass,
+        "GET",
+        "/acme/widget/HEAD/.github/ISSUE_TEMPLATE/bug.yml",
+        fn conn ->
+          Plug.Conn.resp(conn, 200, @bug_yaml)
+        end
+      )
 
-      Bypass.expect_once(bypass, "GET", "/acme/widget/HEAD/.github/ISSUE_TEMPLATE/feature.yaml", fn conn ->
-        Plug.Conn.resp(conn, 200, @feature_yaml)
-      end)
+      Bypass.expect_once(
+        bypass,
+        "GET",
+        "/acme/widget/HEAD/.github/ISSUE_TEMPLATE/feature.yaml",
+        fn conn ->
+          Plug.Conn.resp(conn, 200, @feature_yaml)
+        end
+      )
 
       assert {:ok, [bug, feature]} =
                TemplateFetcher.fetch(repo, base_url: base, raw_base_url: base)
@@ -292,11 +307,16 @@ defmodule FeedbackATron.Synthesis.TemplateFetcherTest do
     end
 
     test "404 on the template directory yields :no_templates", %{bypass: bypass, base: base} do
-      Bypass.expect_once(bypass, "GET", "/repos/acme/empty/contents/.github/ISSUE_TEMPLATE", fn conn ->
-        conn
-        |> Plug.Conn.put_resp_content_type("application/json")
-        |> Plug.Conn.resp(404, ~s({"message": "Not Found"}))
-      end)
+      Bypass.expect_once(
+        bypass,
+        "GET",
+        "/repos/acme/empty/contents/.github/ISSUE_TEMPLATE",
+        fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/json")
+          |> Plug.Conn.resp(404, ~s({"message": "Not Found"}))
+        end
+      )
 
       assert {:error, :no_templates} =
                TemplateFetcher.fetch("acme/empty", base_url: base, raw_base_url: base)
@@ -305,20 +325,30 @@ defmodule FeedbackATron.Synthesis.TemplateFetcherTest do
     test "listing with no template files yields :no_templates", %{bypass: bypass, base: base} do
       listing = [%{"name" => "config.yml", "type" => "file"}]
 
-      Bypass.expect_once(bypass, "GET", "/repos/acme/cfgonly/contents/.github/ISSUE_TEMPLATE", fn conn ->
-        conn
-        |> Plug.Conn.put_resp_content_type("application/json")
-        |> Plug.Conn.resp(200, Jason.encode!(listing))
-      end)
+      Bypass.expect_once(
+        bypass,
+        "GET",
+        "/repos/acme/cfgonly/contents/.github/ISSUE_TEMPLATE",
+        fn conn ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/json")
+          |> Plug.Conn.resp(200, Jason.encode!(listing))
+        end
+      )
 
       assert {:error, :no_templates} =
                TemplateFetcher.fetch("acme/cfgonly", base_url: base, raw_base_url: base)
     end
 
     test "non-JSON listing body yields an error tuple", %{bypass: bypass, base: base} do
-      Bypass.expect_once(bypass, "GET", "/repos/acme/htmlwall/contents/.github/ISSUE_TEMPLATE", fn conn ->
-        Plug.Conn.resp(conn, 200, "<html>definitely not json</html>")
-      end)
+      Bypass.expect_once(
+        bypass,
+        "GET",
+        "/repos/acme/htmlwall/contents/.github/ISSUE_TEMPLATE",
+        fn conn ->
+          Plug.Conn.resp(conn, 200, "<html>definitely not json</html>")
+        end
+      )
 
       assert {:error, {:unexpected_response, _body}} =
                TemplateFetcher.fetch("acme/htmlwall", base_url: base, raw_base_url: base)
@@ -349,9 +379,14 @@ defmodule FeedbackATron.Synthesis.TemplateFetcherTest do
     test "fetches a single form and caches it", %{bypass: bypass, base: base} do
       repo = "acme/single"
 
-      Bypass.expect_once(bypass, "GET", "/acme/single/HEAD/.github/ISSUE_TEMPLATE/bug.yml", fn conn ->
-        Plug.Conn.resp(conn, 200, @bug_yaml)
-      end)
+      Bypass.expect_once(
+        bypass,
+        "GET",
+        "/acme/single/HEAD/.github/ISSUE_TEMPLATE/bug.yml",
+        fn conn ->
+          Plug.Conn.resp(conn, 200, @bug_yaml)
+        end
+      )
 
       assert {:ok, form} = TemplateFetcher.fetch_form(repo, "bug.yml", raw_base_url: base)
       assert form.name == "Bug Report"
@@ -361,9 +396,14 @@ defmodule FeedbackATron.Synthesis.TemplateFetcherTest do
     end
 
     test "missing file yields :not_found", %{bypass: bypass, base: base} do
-      Bypass.expect_once(bypass, "GET", "/acme/single/HEAD/.github/ISSUE_TEMPLATE/nope.yml", fn conn ->
-        Plug.Conn.resp(conn, 404, "404: Not Found")
-      end)
+      Bypass.expect_once(
+        bypass,
+        "GET",
+        "/acme/single/HEAD/.github/ISSUE_TEMPLATE/nope.yml",
+        fn conn ->
+          Plug.Conn.resp(conn, 404, "404: Not Found")
+        end
+      )
 
       assert {:error, :not_found} =
                TemplateFetcher.fetch_form("acme/single", "nope.yml", raw_base_url: base)

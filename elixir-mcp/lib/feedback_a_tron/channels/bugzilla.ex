@@ -48,22 +48,32 @@ defmodule FeedbackATron.Channels.Bugzilla do
     case Req.post(url, json: body, headers: headers) do
       {:ok, %{status: 200, body: resp}} when is_map(resp) ->
         bug_id = resp["id"]
-        {:ok, %{platform: :bugzilla, url: "#{base_url}/show_bug.cgi?id=#{bug_id}", bug_id: bug_id}}
+
+        {:ok,
+         %{platform: :bugzilla, url: "#{base_url}/show_bug.cgi?id=#{bug_id}", bug_id: bug_id}}
 
       {:ok, %{status: 401, body: _error}} ->
-        {:error, %FeedbackATron.Error.AuthenticationError{platform: :bugzilla, reason: "API key rejected"}}
+        {:error,
+         %FeedbackATron.Error.AuthenticationError{platform: :bugzilla, reason: "API key rejected"}}
 
       {:ok, %{status: 429, body: _error}} ->
-        {:error, %FeedbackATron.Error.RateLimitError{platform: :bugzilla, resets_at: nil, remaining: 0}}
+        {:error,
+         %FeedbackATron.Error.RateLimitError{platform: :bugzilla, resets_at: nil, remaining: 0}}
 
       {:ok, %{status: status, body: error}} when status >= 400 and status < 500 ->
         {:error, %FeedbackATron.Error.ValidationError{field: "bug", reason: inspect(error)}}
 
       {:ok, %{status: status, body: error}} ->
-        {:error, %FeedbackATron.Error.PlatformError{platform: :bugzilla, status: status, body: inspect(error)}}
+        {:error,
+         %FeedbackATron.Error.PlatformError{
+           platform: :bugzilla,
+           status: status,
+           body: inspect(error)
+         }}
 
       {:error, reason} ->
-        {:error, %FeedbackATron.Error.NetworkError{platform: :bugzilla, reason: inspect(reason), url: url}}
+        {:error,
+         %FeedbackATron.Error.NetworkError{platform: :bugzilla, reason: inspect(reason), url: url}}
     end
   end
 end

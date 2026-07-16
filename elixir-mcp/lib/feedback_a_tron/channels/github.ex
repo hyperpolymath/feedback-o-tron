@@ -50,7 +50,11 @@ defmodule FeedbackATron.Channels.GitHub do
         %FeedbackATron.Error.ValidationError{field: "issue", reason: String.trim(output)}
 
       true ->
-        %FeedbackATron.Error.PlatformError{platform: platform, status: nil, body: String.trim(output)}
+        %FeedbackATron.Error.PlatformError{
+          platform: platform,
+          status: nil,
+          body: String.trim(output)
+        }
     end
   end
 end

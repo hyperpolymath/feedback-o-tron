@@ -107,7 +107,10 @@ defmodule FeedbackATron.MigrationObserver do
             bundle_size: bundle_size
           }
 
-          Logger.info("[MigrationObserver] Session #{session.session_id} started for #{repo_path}")
+          Logger.info(
+            "[MigrationObserver] Session #{session.session_id} started for #{repo_path}"
+          )
+
           {:reply, {:ok, session.session_id}, %{state | current_session: session}}
 
         {:error, reason} ->
@@ -210,7 +213,9 @@ defmodule FeedbackATron.MigrationObserver do
   end
 
   defp compute_diff(before_snapshot, after_snapshot) do
-    before_deprecated = get_in(before_snapshot, ["migration_metrics", "deprecated_api_count"]) || 0
+    before_deprecated =
+      get_in(before_snapshot, ["migration_metrics", "deprecated_api_count"]) || 0
+
     after_deprecated = get_in(after_snapshot, ["migration_metrics", "deprecated_api_count"]) || 0
     before_modern = get_in(before_snapshot, ["migration_metrics", "modern_api_count"]) || 0
     after_modern = get_in(after_snapshot, ["migration_metrics", "modern_api_count"]) || 0

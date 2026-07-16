@@ -94,7 +94,9 @@ defmodule FeedbackATron.Application do
 
     env_on? =
       case env_enabled? do
-        nil -> false
+        nil ->
+          false
+
         value ->
           normalized =
             value
@@ -147,7 +149,9 @@ defmodule FeedbackATron.Application do
 
     env_on? =
       case env_val do
-        nil -> false
+        nil ->
+          false
+
         value ->
           normalized = value |> String.trim() |> String.downcase()
           Enum.member?(["1", "true", "yes", "on"], normalized)

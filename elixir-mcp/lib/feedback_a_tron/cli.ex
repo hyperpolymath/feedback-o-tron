@@ -27,6 +27,7 @@ defmodule FeedbackATron.CLI do
             IO.puts("\n✅ Submission #{id} completed")
             print_results(results)
             System.halt(0)
+
           {:error, reason} ->
             IO.puts("\n❌ Submission failed: #{inspect(reason)}")
             System.halt(1)
@@ -78,6 +79,7 @@ defmodule FeedbackATron.CLI do
     with {:ok, opts} <- extract_options(args),
          {:ok, issue} <- build_issue(opts) do
       platforms = Keyword.get(opts, :platforms, [:github])
+
       submit_opts = [
         platforms: platforms,
         labels: Keyword.get(opts, :labels, []),
@@ -86,6 +88,7 @@ defmodule FeedbackATron.CLI do
         component: Keyword.get(opts, :component),
         version: Keyword.get(opts, :bug_version)
       ]
+
       {:ok, issue, submit_opts}
     end
   end
@@ -155,10 +158,13 @@ defmodule FeedbackATron.CLI do
     Enum.each(results, fn
       {:ok, %{platform: platform, url: url}} ->
         IO.puts("  ✓ #{platform}: #{url}")
+
       {:ok, %{platform: platform, status: :dry_run}} ->
         IO.puts("  [DRY RUN] #{platform}: Would submit")
+
       {:error, %{platform: platform, error: error}} ->
         IO.puts("  ✗ #{platform}: #{inspect(error)}")
+
       other ->
         IO.puts("  ? #{inspect(other)}")
     end)

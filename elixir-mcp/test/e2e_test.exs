@@ -125,6 +125,7 @@ defmodule FeedbackATron.E2ETest do
 
     test "submission history is accessible by hash after recording" do
       issue = %{title: "E2E: History Check", body: "history body content"}
+
       FeedbackATron.Deduplicator.record(issue, :gitlab, %{
         status: :submitted,
         url: "https://gitlab.com/org/repo/-/issues/7"
@@ -164,6 +165,7 @@ defmodule FeedbackATron.E2ETest do
       Process.sleep(100)
 
       stats = FeedbackATron.Deduplicator.stats()
+
       assert stats.total_submissions >= 5,
              "Expected at least 5 submissions, got: #{stats.total_submissions}"
     end

@@ -58,7 +58,8 @@ defmodule FeedbackATron.Synthesis.FormRendererTest do
   end
 
   test "render metadata wraps the value in a fenced code block" do
-    form = form([field(id: "logs", label: "Relevant log output", type: :textarea, render: "shell")])
+    form =
+      form([field(id: "logs", label: "Relevant log output", type: :textarea, render: "shell")])
 
     rendered = FormRenderer.render(form, %{"logs" => "** (RuntimeError) boom"})
 

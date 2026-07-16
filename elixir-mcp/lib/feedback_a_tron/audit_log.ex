@@ -21,7 +21,8 @@ defmodule FeedbackATron.AuditLog do
   require Logger
 
   @log_file "feedback_a_tron_audit.jsonl"
-  @max_log_size 10_000_000  # 10MB before rotation
+  # 10MB before rotation
+  @max_log_size 10_000_000
 
   defstruct [
     :log_file,
@@ -64,11 +65,12 @@ defmodule FeedbackATron.AuditLog do
   Log a submission attempt.
   """
   def log_submission(platform, issue, status, details \\ %{}) do
-    event_type = case status do
-      :success -> :submission_success
-      :failure -> :submission_failure
-      _ -> :submission_attempt
-    end
+    event_type =
+      case status do
+        :success -> :submission_success
+        :failure -> :submission_failure
+        _ -> :submission_attempt
+      end
 
     log(event_type, %{
       platform: platform,
@@ -95,11 +97,12 @@ defmodule FeedbackATron.AuditLog do
   Log deduplication check.
   """
   def log_dedup(issue_hash, result, details \\ %{}) do
-    event_type = case result do
-      :duplicate -> :dedup_match
-      :similar -> :dedup_match
-      _ -> :dedup_check
-    end
+    event_type =
+      case result do
+        :duplicate -> :dedup_match
+        :similar -> :dedup_match
+        _ -> :dedup_check
+      end
 
     log(event_type, %{
       hash: issue_hash,
@@ -186,6 +189,7 @@ defmodule FeedbackATron.AuditLog do
       log_file: state.log_file,
       uptime_seconds: DateTime.diff(DateTime.utc_now(), state.started_at)
     }
+
     {:reply, stats, state}
   end
 
@@ -201,6 +205,7 @@ defmodule FeedbackATron.AuditLog do
       session_id: state.session_id,
       entry_count: state.entry_count
     })
+
     File.close(state.log_handle)
     :ok
   end
@@ -230,6 +235,7 @@ defmodule FeedbackATron.AuditLog do
     case File.stat(state.log_file) do
       {:ok, %{size: size}} when size > @max_log_size ->
         rotate_log(state)
+
       _ ->
         state
     end
@@ -266,13 +272,14 @@ defmodule FeedbackATron.AuditLog do
 
   defp sanitize(data) when is_map(data) do
     # Remove sensitive fields
-    sensitive_keys = ~w(password token secret key api_key access_token)a ++
-                     ~w(password token secret key api_key access_token)
+    sensitive_keys =
+      ~w(password token secret key api_key access_token)a ++
+        ~w(password token secret key api_key access_token)
 
     data
     |> Enum.reject(fn {k, _v} ->
       key_str = to_string(k) |> String.downcase()
-      Enum.any?(sensitive_keys, &(String.contains?(key_str, to_string(&1))))
+      Enum.any?(sensitive_keys, &String.contains?(key_str, to_string(&1)))
     end)
     |> Enum.into(%{})
   end

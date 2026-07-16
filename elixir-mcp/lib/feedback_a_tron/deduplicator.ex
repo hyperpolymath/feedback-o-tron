@@ -95,44 +95,49 @@ defmodule FeedbackATron.Deduplicator do
     body = issue[:body] || issue["body"] || ""
     hash = compute_hash(title, body)
 
-    result = cond do
-      # Check exact hash match
-      Map.has_key?(state.hash_index, hash) ->
-        existing = state.hash_index[hash]
-        {:duplicate, existing}
+    result =
+      cond do
+        # Check exact hash match
+        Map.has_key?(state.hash_index, hash) ->
+          existing = state.hash_index[hash]
+          {:duplicate, existing}
 
-      # Check fuzzy title match
-      similar = find_similar_titles(title, state.title_index) ->
-        if length(similar) > 0 do
-          {:similar, similar}
-        else
+        # Check fuzzy title match
+        similar = find_similar_titles(title, state.title_index) ->
+          if length(similar) > 0 do
+            {:similar, similar}
+          else
+            {:ok, :unique}
+          end
+
+        true ->
           {:ok, :unique}
-        end
-
-      true ->
-        {:ok, :unique}
-    end
+      end
 
     {:reply, result, state}
   end
 
   @impl true
   def handle_call({:get_history, issue_hash}, _from, state) do
-    history = case :ets.lookup(@ets_table, issue_hash) do
-      [{^issue_hash, data}] -> data
-      [] -> nil
-    end
+    history =
+      case :ets.lookup(@ets_table, issue_hash) do
+        [{^issue_hash, data}] -> data
+        [] -> nil
+      end
+
     {:reply, history, state}
   end
 
   @impl true
   def handle_call(:clear, _from, _state) do
     :ets.delete_all_objects(@ets_table)
-    {:reply, :ok, %__MODULE__{
-      submissions: %{},
-      title_index: %{},
-      hash_index: %{}
-    }}
+
+    {:reply, :ok,
+     %__MODULE__{
+       submissions: %{},
+       title_index: %{},
+       hash_index: %{}
+     }}
   end
 
   @impl true
@@ -143,6 +148,7 @@ defmodule FeedbackATron.Deduplicator do
       unique_hashes: map_size(state.hash_index),
       ets_size: :ets.info(@ets_table, :size)
     }
+
     {:reply, stats, state}
   end
 
@@ -162,10 +168,11 @@ defmodule FeedbackATron.Deduplicator do
     }
 
     # Store in ETS
-    existing = case :ets.lookup(@ets_table, hash) do
-      [{^hash, data}] -> data
-      [] -> %{platforms: [], submissions: []}
-    end
+    existing =
+      case :ets.lookup(@ets_table, hash) do
+        [{^hash, data}] -> data
+        [] -> %{platforms: [], submissions: []}
+      end
 
     updated = %{
       platforms: [platform | existing.platforms] |> Enum.uniq(),
@@ -175,10 +182,11 @@ defmodule FeedbackATron.Deduplicator do
     :ets.insert(@ets_table, {hash, updated})
 
     # Update indexes
-    new_state = %{state |
-      submissions: Map.put(state.submissions, hash, submission),
-      title_index: Map.put(state.title_index, TextSimilarity.normalize_title(title), hash),
-      hash_index: Map.put(state.hash_index, hash, submission)
+    new_state = %{
+      state
+      | submissions: Map.put(state.submissions, hash, submission),
+        title_index: Map.put(state.title_index, TextSimilarity.normalize_title(title), hash),
+        hash_index: Map.put(state.hash_index, hash, submission)
     }
 
     Logger.info("Recorded submission: #{platform} - #{truncate(title, 50)}")
@@ -201,7 +209,11 @@ defmodule FeedbackATron.Deduplicator do
       TextSimilarity.similarity(normalized, indexed_title) >= @similarity_threshold
     end)
     |> Enum.map(fn {indexed_title, hash} ->
-      %{title: indexed_title, hash: hash, similarity: TextSimilarity.similarity(normalized, indexed_title)}
+      %{
+        title: indexed_title,
+        hash: hash,
+        similarity: TextSimilarity.similarity(normalized, indexed_title)
+      }
     end)
     |> Enum.sort_by(& &1.similarity, :desc)
     |> Enum.take(5)

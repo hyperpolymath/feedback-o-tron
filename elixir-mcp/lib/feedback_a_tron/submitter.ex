@@ -26,8 +26,6 @@ defmodule FeedbackATron.Submitter do
   alias FeedbackATron.{Channel, Credentials, Deduplicator, AuditLog, RateLimiter, Retry}
   alias FeedbackATron.Synthesis.{FormRenderer, FormValidator, TemplateFetcher}
 
-
-
   # Client API
 
   def start_link(opts \\ []) do
@@ -80,6 +78,7 @@ defmodule FeedbackATron.Submitter do
       rate_limits: %{},
       opts: opts
     }
+
     {:ok, state}
   end
 
@@ -123,11 +122,13 @@ defmodule FeedbackATron.Submitter do
           end)
 
         submission_id = generate_id()
-        new_state = put_in(state.submissions[submission_id], %{
-          issue: issue,
-          results: results,
-          submitted_at: DateTime.utc_now()
-        })
+
+        new_state =
+          put_in(state.submissions[submission_id], %{
+            issue: issue,
+            results: results,
+            submitted_at: DateTime.utc_now()
+          })
 
         # Results are {:ok, map} / {:error, term} tuples, which Jason cannot
         # encode — inspect them so the audit entry is JSON-safe.
@@ -143,14 +144,16 @@ defmodule FeedbackATron.Submitter do
 
   @impl true
   def handle_call({:submit_batch, issues, opts}, _from, state) do
-    results = Enum.map(issues, fn issue ->
-      # handle_call({:submit, ...}) returns a GenServer {:reply, payload, state}
-      # 3-tuple; destructure the reply payload, not a bare {:ok, id, result}.
-      case handle_call({:submit, issue, opts}, nil, state) do
-        {:reply, {:ok, id, result}, _new_state} -> {id, result}
-        {:reply, {:error, reason}, _new_state} -> {:error, reason}
-      end
-    end)
+    results =
+      Enum.map(issues, fn issue ->
+        # handle_call({:submit, ...}) returns a GenServer {:reply, payload, state}
+        # 3-tuple; destructure the reply payload, not a bare {:ok, id, result}.
+        case handle_call({:submit, issue, opts}, nil, state) do
+          {:reply, {:ok, id, result}, _new_state} -> {id, result}
+          {:reply, {:error, reason}, _new_state} -> {:error, reason}
+        end
+      end)
+
     {:reply, {:ok, results}, state}
   end
 
@@ -225,6 +228,7 @@ defmodule FeedbackATron.Submitter do
   end
 
   defp maybe_dedupe(false, _platform, _issue), do: :ok
+
   defp maybe_dedupe(true, _platform, issue) do
     case Deduplicator.check(issue) do
       {:ok, :unique} -> :ok

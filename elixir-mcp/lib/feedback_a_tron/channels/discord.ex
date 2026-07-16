@@ -53,8 +53,10 @@ defmodule FeedbackATron.Channels.Discord do
         cond do
           not String.starts_with?(cred[:token] || "", "Bot ") ->
             {:error, "Discord bot token must start with 'Bot '"}
+
           is_nil(cred[:channel_id]) ->
             {:error, "Discord channel_id required for bot mode"}
+
           true ->
             :ok
         end
@@ -93,7 +95,12 @@ defmodule FeedbackATron.Channels.Discord do
           message_id = resp["id"]
           guild_id = resp["guild_id"] || "unknown"
           msg_channel_id = resp["channel_id"] || channel_id
-          {:ok, %{platform: :discord, url: "https://discord.com/channels/#{guild_id}/#{msg_channel_id}/#{message_id}"}}
+
+          {:ok,
+           %{
+             platform: :discord,
+             url: "https://discord.com/channels/#{guild_id}/#{msg_channel_id}/#{message_id}"
+           }}
 
         {:ok, %{status: status, body: resp}} ->
           error_msg = extract_error(resp)

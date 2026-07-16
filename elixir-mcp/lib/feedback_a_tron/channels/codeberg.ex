@@ -34,19 +34,27 @@ defmodule FeedbackATron.Channels.Codeberg do
         {:ok, %{platform: :codeberg, url: resp["html_url"]}}
 
       {:ok, %{status: 401, body: _error}} ->
-        {:error, %FeedbackATron.Error.AuthenticationError{platform: :codeberg, reason: "token rejected"}}
+        {:error,
+         %FeedbackATron.Error.AuthenticationError{platform: :codeberg, reason: "token rejected"}}
 
       {:ok, %{status: 429, body: _error}} ->
-        {:error, %FeedbackATron.Error.RateLimitError{platform: :codeberg, resets_at: nil, remaining: 0}}
+        {:error,
+         %FeedbackATron.Error.RateLimitError{platform: :codeberg, resets_at: nil, remaining: 0}}
 
       {:ok, %{status: status, body: error}} when status >= 400 and status < 500 ->
         {:error, %FeedbackATron.Error.ValidationError{field: "issue", reason: inspect(error)}}
 
       {:ok, %{status: status, body: error}} ->
-        {:error, %FeedbackATron.Error.PlatformError{platform: :codeberg, status: status, body: inspect(error)}}
+        {:error,
+         %FeedbackATron.Error.PlatformError{
+           platform: :codeberg,
+           status: status,
+           body: inspect(error)
+         }}
 
       {:error, reason} ->
-        {:error, %FeedbackATron.Error.NetworkError{platform: :codeberg, reason: inspect(reason), url: url}}
+        {:error,
+         %FeedbackATron.Error.NetworkError{platform: :codeberg, reason: inspect(reason), url: url}}
     end
   end
 end

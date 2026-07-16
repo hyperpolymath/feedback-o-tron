@@ -73,7 +73,10 @@ defmodule FeedbackATron.DeduplicatorTest do
       assert {:ok, :unique} = FeedbackATron.Deduplicator.check(issue)
 
       # Record it
-      FeedbackATron.Deduplicator.record(issue, :github, %{status: :submitted, url: "https://github.com/example/issues/1"})
+      FeedbackATron.Deduplicator.record(issue, :github, %{
+        status: :submitted,
+        url: "https://github.com/example/issues/1"
+      })
 
       # Allow the cast to be processed
       Process.sleep(50)
@@ -84,7 +87,12 @@ defmodule FeedbackATron.DeduplicatorTest do
 
     test "duplicate result contains the original submission metadata" do
       issue = %{title: "Recorded Issue", body: "important body text"}
-      FeedbackATron.Deduplicator.record(issue, :gitlab, %{status: :submitted, url: "https://gitlab.com/x/y/issues/5"})
+
+      FeedbackATron.Deduplicator.record(issue, :gitlab, %{
+        status: :submitted,
+        url: "https://gitlab.com/x/y/issues/5"
+      })
+
       Process.sleep(50)
 
       case FeedbackATron.Deduplicator.check(issue) do
@@ -115,7 +123,13 @@ defmodule FeedbackATron.DeduplicatorTest do
 
       # Compute the expected hash the same way the module does:
       # hash is the first 16 hex chars of SHA256(normalised_title:normalised_body)
-      title_norm = issue.title |> String.downcase() |> String.replace(~r/[^\w\s]/, "") |> String.replace(~r/\s+/, " ") |> String.trim()
+      title_norm =
+        issue.title
+        |> String.downcase()
+        |> String.replace(~r/[^\w\s]/, "")
+        |> String.replace(~r/\s+/, " ")
+        |> String.trim()
+
       body_norm = issue.body |> String.downcase() |> String.replace(~r/\s+/, " ") |> String.trim()
       content = "#{title_norm}:#{body_norm}"
       hash = :crypto.hash(:sha256, content) |> Base.encode16(case: :lower) |> binary_part(0, 16)

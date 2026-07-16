@@ -66,6 +66,7 @@ defmodule FeedbackATron.NetworkVerifier do
       verification_cache: %{},
       opts: opts
     }
+
     {:ok, state}
   end
 
@@ -148,9 +149,11 @@ defmodule FeedbackATron.NetworkVerifier do
               stddev: String.to_float(mdev),
               status: :ok
             }
+
           _ ->
             %{status: :parse_error, raw: output}
         end
+
       {output, _} ->
         %{status: :error, error: output}
     end
@@ -187,6 +190,7 @@ defmodule FeedbackATron.NetworkVerifier do
         else
           %{status: :insufficient_samples}
         end
+
       {_, _} ->
         %{status: :error}
     end
@@ -228,6 +232,7 @@ defmodule FeedbackATron.NetworkVerifier do
       {:ok, socket} ->
         :gen_tcp.close(socket)
         %{status: :ok, port: port}
+
       {:error, reason} ->
         %{status: :error, reason: reason, port: port}
     end
@@ -256,6 +261,7 @@ defmodule FeedbackATron.NetworkVerifier do
     case System.cmd("dig", ["+short", "TLSA", tlsa_name], stderr_to_stdout: true) do
       {output, 0} when output != "" ->
         %{status: :present, records: String.split(output, "\n", trim: true)}
+
       _ ->
         %{status: :not_configured}
     end
@@ -268,16 +274,18 @@ defmodule FeedbackATron.NetworkVerifier do
     case Req.get(url, receive_timeout: 15_000) do
       {:ok, %{status: 200, body: body}} when is_list(body) ->
         certs = Enum.take(body, 5)
+
         %{
           status: :present,
           certificate_count: length(body),
-          recent: Enum.map(certs, fn cert ->
-            %{
-              issuer: cert["issuer_name"],
-              not_before: cert["not_before"],
-              not_after: cert["not_after"]
-            }
-          end)
+          recent:
+            Enum.map(certs, fn cert ->
+              %{
+                issuer: cert["issuer_name"],
+                not_before: cert["not_before"],
+                not_after: cert["not_after"]
+              }
+            end)
         }
 
       {:ok, %{status: status}} ->
@@ -293,6 +301,7 @@ defmodule FeedbackATron.NetworkVerifier do
       {output, 0} ->
         has_rrsig = String.contains?(output, "RRSIG")
         %{status: if(has_rrsig, do: :validated, else: :unsigned)}
+
       _ ->
         %{status: :error}
     end
@@ -334,27 +343,36 @@ defmodule FeedbackATron.NetworkVerifier do
           [_, owner, repo, num] -> {:github, owner, repo, String.to_integer(num)}
           _ -> :unknown
         end
+
       String.contains?(uri.host, "gitlab") ->
         # Parse GitLab URL
         :gitlab_parse_needed
+
       true ->
         :unknown
     end
   end
 
   defp verify_github_issue(owner, repo, issue_number) do
-    case System.cmd("gh", ["issue", "view", "#{issue_number}", "--repo", "#{owner}/#{repo}", "--json", "number,title,state"]) do
+    case System.cmd("gh", [
+           "issue",
+           "view",
+           "#{issue_number}",
+           "--repo",
+           "#{owner}/#{repo}",
+           "--json",
+           "number,title,state"
+         ]) do
       {output, 0} ->
         case Jason.decode(output) do
           {:ok, data} -> %{status: :verified, data: data}
           _ -> %{status: :parse_error}
         end
+
       {error, _} ->
         %{status: :not_found, error: error}
     end
   end
-
-
 end
 
 defmodule FeedbackATron.NetworkVerifier.DNSVerifier do
@@ -364,6 +382,7 @@ defmodule FeedbackATron.NetworkVerifier.DNSVerifier do
     case :inet.gethostbyname(String.to_charlist(host)) do
       {:ok, {:hostent, _, _, _, _, addresses}} ->
         %{status: :ok, addresses: Enum.map(addresses, &:inet.ntoa/1)}
+
       {:error, reason} ->
         %{status: :error, reason: reason}
     end
@@ -390,7 +409,8 @@ defmodule FeedbackATron.NetworkVerifier.DNSVerifier do
 
   defp measure_resolution_time(host) do
     {time, _} = :timer.tc(fn -> :inet.gethostbyname(String.to_charlist(host)) end)
-    time / 1000  # Convert to ms
+    # Convert to ms
+    time / 1000
   end
 end
 
@@ -399,14 +419,22 @@ defmodule FeedbackATron.NetworkVerifier.TLSVerifier do
 
   def verify_certificate(host, port) do
     # Use OpenSSL for detailed cert info
-    case System.cmd("openssl", [
-      "s_client",
-      "-connect", "#{host}:#{port}",
-      "-servername", host,
-      "-brief"
-    ], stderr_to_stdout: true, timeout: 10_000) do
+    case System.cmd(
+           "openssl",
+           [
+             "s_client",
+             "-connect",
+             "#{host}:#{port}",
+             "-servername",
+             host,
+             "-brief"
+           ],
+           stderr_to_stdout: true,
+           timeout: 10_000
+         ) do
       {output, 0} ->
         parse_tls_info(output)
+
       {output, _} ->
         %{status: :error, output: output}
     end
@@ -419,8 +447,7 @@ defmodule FeedbackATron.NetworkVerifier.TLSVerifier do
       status: :ok,
       protocol: extract_field(output, ~r/Protocol\s+:\s+(\S+)/),
       cipher: extract_field(output, ~r/Cipher\s+:\s+(.+)/),
-      verification: if(String.contains?(output, "Verification: OK"),
-        do: :verified, else: :failed)
+      verification: if(String.contains?(output, "Verification: OK"), do: :verified, else: :failed)
     }
   end
 
@@ -440,12 +467,14 @@ defmodule FeedbackATron.NetworkVerifier.RouteAnalyzer do
     case :inet.gethostbyname(String.to_charlist(host)) do
       {:ok, {:hostent, _, _, _, _, [ip | _]}} ->
         ip_str = :inet.ntoa(ip) |> to_string()
+
         %{
           status: :ok,
           ip: ip_str,
           asn: lookup_asn(ip_str),
           geo: lookup_geo(ip_str)
         }
+
       {:error, reason} ->
         %{status: :error, reason: reason}
     end
@@ -487,6 +516,7 @@ defmodule FeedbackATron.NetworkVerifier.RouteAnalyzer do
       case Req.get(url, receive_timeout: 10_000) do
         {:ok, %{status: 200, body: body}} when is_map(body) ->
           validity = get_in(body, ["validated_route", "validity", "state"]) || "unknown"
+
           %{
             status: :ok,
             validity: validity,
@@ -597,9 +627,12 @@ defmodule FeedbackATron.NetworkVerifier.PathAnalyzer do
   defp parse_hop(line) do
     case Regex.run(~r/^\s*(\d+)\s+(\S+)\s+(.*)/, line) do
       [_, hop, ip, rest] ->
-        times = Regex.scan(~r/(\d+\.?\d*)\s*ms/, rest)
-                |> Enum.map(fn [_, t] -> String.to_float(t) end)
+        times =
+          Regex.scan(~r/(\d+\.?\d*)\s*ms/, rest)
+          |> Enum.map(fn [_, t] -> String.to_float(t) end)
+
         %{hop: String.to_integer(hop), ip: ip, times_ms: times}
+
       _ ->
         %{raw: line}
     end

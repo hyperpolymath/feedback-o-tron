@@ -15,9 +15,23 @@ defmodule FeedbackATron.CredentialsTest do
 
     test "struct has all platform fields" do
       creds = Credentials.load()
-      fields = [:github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email,
-                :nntp, :discourse, :mailman, :sourcehut, :jira, :matrix,
-                :discord, :reddit]
+
+      fields = [
+        :github,
+        :gitlab,
+        :bitbucket,
+        :codeberg,
+        :bugzilla,
+        :email,
+        :nntp,
+        :discourse,
+        :mailman,
+        :sourcehut,
+        :jira,
+        :matrix,
+        :discord,
+        :reddit
+      ]
 
       for field <- fields do
         assert Map.has_key?(creds, field),
@@ -65,10 +79,11 @@ defmodule FeedbackATron.CredentialsTest do
       creds = %Credentials{github: [cred1, cred2]}
 
       # Call get multiple times — should rotate
-      results = for _ <- 1..4 do
-        {:ok, cred} = Credentials.get(creds, :github)
-        cred.token
-      end
+      results =
+        for _ <- 1..4 do
+          {:ok, cred} = Credentials.get(creds, :github)
+          cred.token
+        end
 
       # Should see both tokens across multiple calls
       assert "token-1" in results

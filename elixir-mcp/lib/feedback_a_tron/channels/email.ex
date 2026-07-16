@@ -35,6 +35,8 @@ defmodule FeedbackATron.Channels.Email do
     # Email submission delegates to Mailman's SMTPS transport.
     # Standalone email will be implemented when gen_smtp or swoosh is added.
     Logger.warning("Email channel: use Mailman channel for SMTPS email submission")
-    {:error, %{platform: :email, error: :not_implemented, reason: "Use Mailman channel for SMTPS"}}
+
+    {:error,
+     %{platform: :email, error: :not_implemented, reason: "Use Mailman channel for SMTPS"}}
   end
 end
