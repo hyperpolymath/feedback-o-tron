@@ -7,8 +7,7 @@ image:https://img.shields.io/badge/OpenSSF-Best_Practices-green?logo=openssource
 image:https://img.shields.io/badge/License-MPL--2.0-blue.svg[License: MPL-2.0,link="https://www.mozilla.org/en-US/MPL/2.0/"]
 image:https://img.shields.io/badge/version-1.0.0-blue[Version 1.0.0]
 image:https://img.shields.io/badge/RSR-Certified-gold[RSR Certified]
-image:https://img.shields.io/badge/Idris-inside-purple[Idris Inside]
-image:https://img.shields.io/badge/Status-Production%20Ready-green[Production Ready]
+image:https://img.shields.io/badge/Idris2-contract_spec_%2B_runtime_validation-purple[Idris2 contract spec + Elixir runtime validation]
 
 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 v1.0.0, 2026-02-07
@@ -21,11 +20,21 @@ v1.0.0, 2026-02-07
 :url-bitbucket: https://bitbucket.org/hyperpolymath/feedback-o-tron
 :url-codeberg: https://codeberg.org/hyperpolymath/feedback-o-tron
 
-**Autonomous multi-platform bug reporting for AI agents** — Fully tested in production with real Bugzilla submissions.
+**Autonomous multi-platform bug reporting for AI agents** — validated with real Bugzilla submissions (2026-02-07).
 
 image:https://img.shields.io/badge/Validated-2%20Real%20Bugs%20Filed-brightgreen[Real World Tested]
 
 toc::[]
+
+== Goal
+
+Feedback should be **fluid for the sender and shaped for the receiver**.
+
+* **Fluid for the sender** — raw feedback arrives from anywhere: an MCP tool call, the HTTP intake, the standalone CLI, or the boj `bug-filing-mcp` cartridge. No form-filling at the point of frustration.
+* **Shaped for the receiver** — the engine fetches the target repo's *own* issue-form template (`.github/ISSUE_TEMPLATE/*.yml`), hydrates its fields from context and system state, and files a report in the receiver's taxonomy containing only what they asked for.
+* **Intent-preserving** — the gate is *usefulness, not tone*. Zero-signal hostility is rejected with a stated reason, audit-logged, and never filed. Mixed content has its actionable core salvaged and the abuse stripped — and both facts are reported. Genuine-but-thin feedback is never silently discarded: it comes back as open questions.
+* **Research before filing** — existing forge issues are searched and the local submission history is dedup-checked *before* anything is filed; fields only the user can answer return as `open_questions` for an interactive loop (see <<mcp-tools,the three MCP tools>>).
+* **Foundational sorting** — deduplication plus text similarity means recurring themes are recognized as recurring patterns, while one-offs are treated as one-offs.
 
 [TIP]
 ====
@@ -146,19 +155,20 @@ For manual installation without AI assistance, see the <<manual-quick-start,Manu
 
 == Overview
 
-feedback-o-tron is a production-ready tool for autonomous AI agents to submit bug reports across multiple platforms. Successfully validated on 2026-02-07 with 2 real bugs filed to Fedora Bugzilla:
+feedback-o-tron is a tool for autonomous AI agents to submit bug reports across multiple platforms. Validated on 2026-02-07 with 2 real bugs filed to Fedora Bugzilla:
 
 * https://bugzilla.redhat.com/show_bug.cgi?id=2437503[Bug #2437503]: maliit-keyboard crash loop (SIGABRT)
 * https://bugzilla.redhat.com/show_bug.cgi?id=2437504[Bug #2437504]: xwaylandvideobridge portal error
 
-Built for reliability with an Idris2 ABI specification layer (proofs planned — see link:PROOF-NEEDS.md[PROOF-NEEDS.md] for current status).
+Payload validation is stated twice, deliberately: an **Idris2-verified contract spec** (`src/abi/FeedbackOTron/Contract.idr`) defines the issue-form rules with machine-checked proofs, and `FeedbackATron.Synthesis.FormValidator` enforces the *same* rules as the **Elixir runtime validation boundary**. See link:PROOF-NEEDS.md[PROOF-NEEDS.md] for what remains (full FFI enforcement is follow-up work).
 
 === Key Features
 
 * **Multi-platform submission**: GitHub, GitLab, Bitbucket, Codeberg, Bugzilla, Email (6 platforms)
 * **Bugzilla REST API**: Full support for product/component/version targeting
-* **Deduplication**: Prevents duplicate submissions using fuzzy matching (Levenshtein distance)
-* **Formal specification**: Idris2 ABI layer (dependent type proofs planned — see PROOF-NEEDS.md)
+* **Synthesis Engine**: shapes raw feedback to the receiver's own issue-form template (research → synthesize → submit loop, agent-in-the-loop)
+* **Deduplication**: Prevents duplicate submissions using fuzzy matching (Levenshtein distance); successful submissions are recorded so recurring themes are recognized as recurring
+* **Verified contract**: Idris2-verified contract spec (src/abi) + Elixir runtime validation boundary (FormValidator)
 * **Credential rotation**: Avoids rate limits by rotating credentials
 * **Audit logging**: Complete JSON-lines format record of all operations
 * **MCP integration**: Works as Claude Code tool or standalone CLI
@@ -230,11 +240,11 @@ mix escript.build
 mix run --no-halt
 ----
 
-== Production Status (2026-02-07)
+== Validation Status (2026-02-07)
 
-**v1.0.0 - Production Ready** ✅
+**v1.0.0 core validated in the real world** — the submission core works end-to-end; other parts of the system are newer or still in progress (see link:TOPOLOGY.md[TOPOLOGY.md] for the honest per-component dashboard).
 
-Successfully validated in real-world production:
+Validated on 2026-02-07:
 
 * ✅ 2 bugs filed to Fedora Bugzilla (https://bugzilla.redhat.com/show_bug.cgi?id=2437503[#2437503], https://bugzilla.redhat.com/show_bug.cgi?id=2437504[#2437504])
 * ✅ CLI module: Complete with --mcp-server, submit, --version, --help commands
@@ -243,7 +253,7 @@ Successfully validated in real-world production:
 * ✅ Credential loading: Environment variables + CLI configs (gh, glab)
 * ✅ Deduplication: Fuzzy matching with Levenshtein distance
 * ✅ Audit logging: Complete event tracking with JSON-lines format
-* ✅ Test suite: 26/26 tests passing
+* ✅ Test suite: ExUnit suite passing at validation time
 
 **Bugs fixed during validation:**
 
@@ -338,9 +348,46 @@ FeedbackATron.Deduplicator.check(%{title: "...", body: "..."})
 # => {:ok, :unique} | {:duplicate, existing} | {:similar, matches}
 ----
 
-=== As MCP Tool (Claude Code)
+[[mcp-tools]]
+=== As MCP Tools (Claude Code)
 
-The MCP server exposes a `submit_feedback` tool for autonomous AI bug reporting:
+The MCP server exposes **three** feedback tools, designed as an interactive loop:
+
+1. `research_feedback` — check for duplicates and discover the repo's templates
+2. `synthesize_feedback` — shape the raw feedback into a template-fitting draft
+3. Resolve any `open_questions` with your user
+4. `submit_feedback` — file the report with `template` + `template_data`
+
+**`research_feedback`** — searches the target forge for existing similar issues, checks the local submission history (Deduplicator), and fetches the repo's issue-form templates:
+
+[source,json]
+----
+{
+  "tool": "research_feedback",
+  "params": {
+    "repo": "owner/repo",
+    "title": "Working title of the feedback",
+    "body": "Optional draft body to improve similarity matching"
+  }
+}
+----
+
+**`synthesize_feedback`** — classifies intent (bug/feature/question/docs/praise), salvages the actionable core from mixed content, hydrates the repo's issue-form fields from context and system state, and returns a draft plus `open_questions` for anything only the user can answer. Zero-signal abuse is rejected with a stated reason (`{"rejected": true, "reason": ...}`), audit-logged, and never filed:
+
+[source,json]
+----
+{
+  "tool": "synthesize_feedback",
+  "params": {
+    "raw_feedback": "The raw feedback/crash text...",
+    "repo": "owner/repo",
+    "context": {"version": "1.2.3", "trajectory": "..."},
+    "system_state": {"os": "Fedora 43"}
+  }
+}
+----
+
+**`submit_feedback`** — files the report. With `template` + `template_data`, the answers are validated against the fetched form schema (the Elixir side of the Idris2 contract) and rendered as the issue body before dispatch:
 
 [source,json]
 ----
@@ -350,7 +397,9 @@ The MCP server exposes a `submit_feedback` tool for autonomous AI bug reporting:
     "title": "Bug report",
     "body": "Full description with reproduction steps...",
     "platforms": ["github", "gitlab", "bugzilla"],
-    "repo": "owner/repo"
+    "repo": "owner/repo",
+    "template": "bug.yml",
+    "template_data": {"what-happened": "...", "version": "1.2.3"}
   }
 }
 ----
@@ -371,13 +420,13 @@ MCP configuration in `~/.config/claude/mcp_servers.json`:
 }
 ----
 
-== Formal Specification with Idris2 (Planned)
+== Formal Specification with Idris2
 
-feedback-o-tron has an **Idris2** ABI specification layer for defining platform types and FFI boundaries. Full dependent-type proofs for memory safety and correctness are planned but not yet materialized.
+feedback-o-tron ships an **Idris2-verified contract spec** (`src/abi/FeedbackOTron/Contract.idr`) paired with an **Elixir runtime validation boundary** (`FeedbackATron.Synthesis.FormValidator`). The Idris2 module states the issue-form validation rules once, totally (`%default total`, no `believe_me`, no `postulate`), and proves that `validate` enforces them — completeness (every required field answered), no unknown answer keys, dropdown answers constrained to declared options, and answers-preserved. Its `ValidPayload` type has a private constructor, so the only way to obtain one is through `validate`. The Elixir module enforces the same rules at runtime on every template-shaped submission.
 
-NOTE: The original template ABI files (Types.idr, Layout.idr, Foreign.idr) were removed on 2026-03-29 as they contained only scaffolding. See link:PROOF-NEEDS.md[PROOF-NEEDS.md] for what needs to be proven and the current status.
+NOTE: The original template ABI files (Types.idr, Layout.idr, Foreign.idr) were removed on 2026-03-29 as they contained only scaffolding. `Contract.idr` replaced them with a real, proof-carrying spec. What does **not** exist yet: FFI-level enforcement — the Zig FFI bridge remains a stub, and the Elixir core does not call into Idris2-compiled code. The contract is a spec the runtime mirrors, not a boundary the payload physically crosses. See link:PROOF-NEEDS.md[PROOF-NEEDS.md] for status.
 
-=== Planned Proofs
+=== Planned Proofs (beyond Contract.idr)
 
 * **Deduplication correctness**: Prove the deduplicator never drops unique entries
 * **Submission atomicity**: Prove submissions fully succeed or fully fail
@@ -393,18 +442,18 @@ Can leverage 90+ formally verified modules from the https://github.com/hyperpoly
 * **SafeJSON**: Type-safe JSON parsing with schema validation
 * **SafeURL**: URL parsing with format guarantees
 
-Integration architecture:
+Integration architecture (target — the Zig bridge is currently a stub):
 
 [source]
 ----
-Idris2 (Formal Specifications → Proofs)
+Idris2 (Formal Specifications → Proofs)   [Contract.idr: real, today]
    ↓
-Zig FFI (C ABI Bridge)
+Zig FFI (C ABI Bridge)                    [stub, follow-up]
    ↓
-Elixir/BEAM (Runtime)
+Elixir/BEAM (Runtime)                     [FormValidator mirrors the spec, today]
 ----
 
-This architecture will enable **provable correctness** at the ABI boundary while maintaining **runtime flexibility** in Elixir.
+Full FFI enforcement would make the contract a boundary the payload physically crosses, rather than a spec the runtime mirrors.
 
 == Architecture
 
@@ -417,7 +466,7 @@ See link:TOPOLOGY.md[TOPOLOGY.md] for a visual architecture map and completion d
 ├─────────────────────────────────────────────────────────────┤
 │  ┌──────────┐  ┌──────────────┐  ┌─────────────────────┐   │
 │  │Submitter │  │ Deduplicator │  │ NetworkVerifier     │   │
-│  │          │  │              │  │  - Latency/jitter   │   │
+│  │          │  │  (wired)     │  │  - Latency/jitter   │   │
 │  │ - GitHub │  │ - SHA-256    │  │  - DNS verification │   │
 │  │ - GitLab │  │ - Levenshtein│  │  - TLS validation   │   │
 │  │-Bitbucket│  │ - Fuzzy match│  │  - BGP/RPKI checks  │   │
@@ -425,6 +474,12 @@ See link:TOPOLOGY.md[TOPOLOGY.md] for a visual architecture map and completion d
 │  │-Bugzilla │  │              │  │                     │   │
 │  │ - Email  │  │              │  │                     │   │
 │  └──────────┘  └──────────────┘  └─────────────────────┘   │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │        Synthesis Engine (agent-in-the-loop)          │  │
+│  │  TemplateFetcher/Cache · IntentClassifier · Hydrator │  │
+│  │  Research · FormRenderer · FormValidator · Synthesizer│ │
+│  └──────────────────────────────────────────────────────┘  │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │                  AuditLog                             │  │
@@ -438,10 +493,10 @@ See link:TOPOLOGY.md[TOPOLOGY.md] for a visual architecture map and completion d
 │  - CLI configs (gh, glab)                                  │
 │  - Rotation for rate limit avoidance                       │
 ├─────────────────────────────────────────────────────────────┤
-│            Idris2 ABI Layer (Formal Specification)           │
-│  - Platform type definitions                                │
-│  - FFI boundary specs via Zig C ABI bridge                  │
-│  - Dependent type proofs planned (see PROOF-NEEDS.md)       │
+│  Idris2 contract spec (src/abi/FeedbackOTron/Contract.idr)  │
+│  - Issue-form validation rules, machine-checked proofs     │
+│  - Enforced at runtime by Elixir FormValidator             │
+│  - Zig FFI bridge = stub (full FFI enforcement follow-up)  │
 └─────────────────────────────────────────────────────────────┘
 ----
 
@@ -466,7 +521,7 @@ See link:TOPOLOGY.md[TOPOLOGY.md] for a visual architecture map and completion d
 ----
 
 2. Restart Claude Code
-3. Use tool: `submit_feedback` with parameters
+3. Use the tools: `research_feedback` → `synthesize_feedback` → `submit_feedback` (see <<mcp-tools>>)
 
 === ChatGPT / GPT-4 (OpenAI)
 

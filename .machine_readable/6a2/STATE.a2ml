@@ -1,32 +1,34 @@
 # SPDX-License-Identifier: MPL-2.0
 # STATE.a2ml — Project state checkpoint
 # Converted from STATE.scm on 2026-03-15
-# Updated 2026-04-09
+# Updated 2026-07-09
 
 [metadata]
 project = "feedback-o-tron"
-version = "1.0.0"
-last-updated = "2026-04-09"
-status = "production"
+version = "1.2.0-dev"
+last-updated = "2026-07-09"
+status = "active-development"
 
 [project-context]
 name = "feedback-o-tron"
-completion-percentage = 95
-phase = "Production"
+completion-percentage = 75
+phase = "Synthesis Engine + honest reconciliation"
 
 [components]
 cli = "100%"
-mcp-server = "100%"
+mcp-server = "100% (research_feedback, synthesize_feedback, submit_feedback, migration_observe)"
+http-intake = "done (Bandit :7722, localhost-only, off by default; boj bug-filing-mcp wire)"
+synthesis-engine = "done (this PR: TemplateFetcher, TemplateCache, IntentClassifier, Hydrator, Research, Synthesizer, FormValidator, FormRenderer, TextSimilarity)"
 channels-github = "100%"
-channels-gitlab = "100%"
-channels-bitbucket = "100%"
-channels-codeberg = "100%"
+channels-gitlab = "90%"
+channels-bitbucket = "90%"
+channels-codeberg = "90%"
 channels-bugzilla = "100%"
 channels-email = "80%"
-deduplication = "100%"
+deduplication = "wired (record/3 called on successful submission; check/1 consulted pre-dispatch and by Research)"
 audit-logging = "100%"
-network-verifier = "90%"
+network-verifier = "70% (real probing; opt-in via Hydrator network_probe; BGP/RPKI partial)"
 rate-limiter = "100%"
 retry-backoff = "100%"
-zig-ffi = "95%"
-idris2-proofs = "80%"
+zig-ffi = "stub"
+idris2 = "contract spec only (Contract.idr), no FFI enforcement"

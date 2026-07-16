@@ -4,20 +4,56 @@
 
 == Current Status
 
-Initial development phase.
+The v1.0 submission core is shipped and real-world validated. Current work
+(this branch) is the Synthesis Engine: shaping raw feedback to the receiver's
+own issue template, with research-before-filing and an Idris2-verified
+validation contract. See link:TOPOLOGY.md[TOPOLOGY.md] for the honest
+per-component completion dashboard.
 
 == Milestones
 
-=== v0.1.0 - Foundation
-* [ ] Core functionality
-* [ ] Basic documentation
-* [ ] CI/CD pipeline
+=== v1.0.0 — Core (shipped 2026-02-07)
 
-=== v1.0.0 - Stable Release
-* [ ] Full feature set
-* [ ] Comprehensive tests
-* [ ] Production ready
+* [x] MCP server (stdio/TCP) with `submit_feedback`
+* [x] Standalone CLI (escript)
+* [x] Multi-platform channels (GitHub, GitLab, Bitbucket, Codeberg, Bugzilla, Email)
+* [x] Audit logging (JSON-lines, secret-sanitised, rotated)
+* [x] Credential loading + rotation, rate limiting, retry/backoff
+* [x] Real-world validation: 2 bugs filed to Fedora Bugzilla
+  (https://bugzilla.redhat.com/show_bug.cgi?id=2437503[#2437503],
+  https://bugzilla.redhat.com/show_bug.cgi?id=2437504[#2437504])
+
+=== v1.1 — HTTP intake + boj cartridge (2026-07-09)
+
+* [x] HTTP intake (Bandit, localhost-only, `127.0.0.1:7722`, off by default via
+  `FEEDBACK_A_TRON_HTTP`) — a thin JSON adapter over the same `Submitter.submit/2`
+  path as the MCP tools
+* [x] `bug-filing-mcp` boj cartridge (in `boj-server-cartridges`) wrapping the
+  engine over that wire — resolving the D0 identity decision
+  (see `docs/AUTONOMOUS-BUG-PIPELINE.adoc` §5)
+
+=== v1.2 — Synthesis Engine + research mode + Idris2 contract (this branch)
+
+* [x] Synthesis Engine: `TemplateFetcher`/`TemplateCache` (engine-side fetch of
+  the target repo's issue forms), `IntentClassifier` (usefulness gate:
+  salvage/reject/open-questions), `Hydrator`, `Synthesizer`, `FormRenderer`,
+  `FormValidator`, `TextSimilarity`
+* [x] Research mode: `research_feedback` MCP tool — forge issue search + local
+  dedup check + template discovery before anything is filed
+* [x] Interactive loop: research → synthesize → resolve `open_questions` with
+  the user → submit with `template` + `template_data`
+* [x] Deduplicator wired: `record/3` on successful submission, so recurring
+  themes are recognized as recurring
+* [x] Idris2 contract spec (`src/abi/FeedbackOTron/Contract.idr`): total,
+  proof-carrying statement of the form-validation rules, mirrored at runtime
+  by `FormValidator`
 
 == Future Directions
 
-_To be determined based on community feedback._
+* *Full FFI enforcement* — replace the stub Zig bridge so the validated payload
+  physically crosses an Idris2-backed boundary instead of the runtime mirroring
+  the spec
+* *Forge-side clustering* — group recurring themes on the forge (linked issues,
+  labels) rather than only in local history
+* *Org-level `.github` template support* — fall back to an organisation's
+  shared `.github` repo when the target repo declares no issue forms
