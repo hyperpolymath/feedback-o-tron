@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: MPL-2.0
+name: "Feature request"
+description: "Suggest an improvement or new capability."
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem"
+      description: "What problem are you trying to solve? What is painful or missing today?"
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: "Proposed solution"
+      description: "What would you like to happen?"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives considered"
+      description: "Other approaches or workarounds you have considered."
+  - type: input
+    id: scope
+    attributes:
+      label: "Scope"
+      placeholder: "e.g. MCP server, HTTP intake, CLI"

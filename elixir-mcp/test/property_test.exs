@@ -38,6 +38,7 @@ defmodule FeedbackATron.PropertyTest do
   defp fresh_issues(n) do
     for i <- 1..n do
       salt = System.unique_integer([:positive])
+
       %{
         title: "Unique property test issue #{i} salt-#{salt}",
         body: "Property test body content for issue #{i} with salt #{salt}"
@@ -65,7 +66,9 @@ defmodule FeedbackATron.PropertyTest do
   # truncation path in normalize_body/1.
   defp long_body_issues(n) do
     for i <- 1..n do
-      long_body = String.duplicate("x", 600) <> " unique salt #{System.unique_integer([:positive])}"
+      long_body =
+        String.duplicate("x", 600) <> " unique salt #{System.unique_integer([:positive])}"
+
       %{title: "Long body issue #{i}", body: long_body}
     end
   end

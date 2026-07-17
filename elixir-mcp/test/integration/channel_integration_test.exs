@@ -76,6 +76,7 @@ defmodule FeedbackATron.Integration.ChannelIntegrationTest do
     test "submit returns not_implemented error" do
       issue = %{title: "Test", body: "Body", repo: nil}
       cred = %{smtp_server: "mail.example.com", from_address: "test@example.com"}
+
       assert {:error, %{platform: :email, error: :not_implemented}} =
                FeedbackATron.Channels.Email.submit(issue, cred, [])
     end
@@ -88,10 +89,18 @@ defmodule FeedbackATron.Integration.ChannelIntegrationTest do
                %FeedbackATron.Error.AuthenticationError{platform: :github, reason: "test"}
 
       assert %FeedbackATron.Error.RateLimitError{platform: :gitlab} =
-               %FeedbackATron.Error.RateLimitError{platform: :gitlab, resets_at: nil, remaining: 0}
+               %FeedbackATron.Error.RateLimitError{
+                 platform: :gitlab,
+                 resets_at: nil,
+                 remaining: 0
+               }
 
       assert %FeedbackATron.Error.NetworkError{platform: :bitbucket} =
-               %FeedbackATron.Error.NetworkError{platform: :bitbucket, reason: "timeout", url: "https://example.com"}
+               %FeedbackATron.Error.NetworkError{
+                 platform: :bitbucket,
+                 reason: "timeout",
+                 url: "https://example.com"
+               }
 
       assert %FeedbackATron.Error.PlatformError{platform: :codeberg} =
                %FeedbackATron.Error.PlatformError{platform: :codeberg, status: 500, body: "error"}

@@ -58,5 +58,77 @@ defmodule FeedbackATron.MCP.ServerTest do
       schema = FeedbackATron.MCP.Tools.SubmitFeedback.input_schema()
       assert is_map(schema)
     end
+
+    test "input_schema includes template and template_data" do
+      schema = FeedbackATron.MCP.Tools.SubmitFeedback.input_schema()
+      assert Map.has_key?(schema.properties, :template)
+      assert Map.has_key?(schema.properties, :template_data)
+    end
+  end
+
+  describe "ResearchFeedback tool" do
+    test "tool module is loaded" do
+      assert Code.ensure_loaded?(FeedbackATron.MCP.Tools.ResearchFeedback)
+    end
+
+    test "tool exports execute/2" do
+      exports = FeedbackATron.MCP.Tools.ResearchFeedback.__info__(:functions)
+      assert {:execute, 2} in exports
+    end
+
+    test "tool name is research_feedback" do
+      assert FeedbackATron.MCP.Tools.ResearchFeedback.name() == "research_feedback"
+    end
+
+    test "tool description is a string" do
+      desc = FeedbackATron.MCP.Tools.ResearchFeedback.description()
+      assert is_binary(desc)
+    end
+
+    test "input_schema requires repo and title" do
+      schema = FeedbackATron.MCP.Tools.ResearchFeedback.input_schema()
+      assert schema.required == ["repo", "title"]
+    end
+
+    test "input_schema declares the canonical properties" do
+      schema = FeedbackATron.MCP.Tools.ResearchFeedback.input_schema()
+
+      for key <- [:repo, :title, :body, :limit, :include_templates] do
+        assert Map.has_key?(schema.properties, key)
+      end
+    end
+  end
+
+  describe "SynthesizeFeedback tool" do
+    test "tool module is loaded" do
+      assert Code.ensure_loaded?(FeedbackATron.MCP.Tools.SynthesizeFeedback)
+    end
+
+    test "tool exports execute/2" do
+      exports = FeedbackATron.MCP.Tools.SynthesizeFeedback.__info__(:functions)
+      assert {:execute, 2} in exports
+    end
+
+    test "tool name is synthesize_feedback" do
+      assert FeedbackATron.MCP.Tools.SynthesizeFeedback.name() == "synthesize_feedback"
+    end
+
+    test "tool description is a string" do
+      desc = FeedbackATron.MCP.Tools.SynthesizeFeedback.description()
+      assert is_binary(desc)
+    end
+
+    test "input_schema requires raw_feedback and repo" do
+      schema = FeedbackATron.MCP.Tools.SynthesizeFeedback.input_schema()
+      assert schema.required == ["raw_feedback", "repo"]
+    end
+
+    test "input_schema declares the canonical properties" do
+      schema = FeedbackATron.MCP.Tools.SynthesizeFeedback.input_schema()
+
+      for key <- [:raw_feedback, :repo, :context, :system_state, :template, :network_probe] do
+        assert Map.has_key?(schema.properties, key)
+      end
+    end
   end
 end

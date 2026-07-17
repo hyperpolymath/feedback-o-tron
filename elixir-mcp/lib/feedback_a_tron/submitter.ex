@@ -24,8 +24,7 @@ defmodule FeedbackATron.Submitter do
   require Logger
 
   alias FeedbackATron.{Channel, Credentials, Deduplicator, AuditLog, RateLimiter, Retry}
-
-
+  alias FeedbackATron.Synthesis.{FormRenderer, FormValidator, TemplateFetcher}
 
   # Client API
 
@@ -79,51 +78,85 @@ defmodule FeedbackATron.Submitter do
       rate_limits: %{},
       opts: opts
     }
+
     {:ok, state}
   end
 
   @impl true
   def handle_call({:submit, issue, opts}, _from, state) do
-    platforms = Keyword.get(opts, :platforms, [:github])
-    dry_run = Keyword.get(opts, :dry_run, false)
-    dedupe = Keyword.get(opts, :dedupe, true)
+    case maybe_apply_template(issue) do
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
 
-    results =
-      platforms
-      |> Enum.map(fn platform ->
-        with :ok <- RateLimiter.check(platform),
-             :ok <- maybe_dedupe(dedupe, platform, issue),
-             {:ok, cred} <- Credentials.get(state.credentials, platform) do
-          if dry_run do
-            {:ok, %{platform: platform, status: :dry_run, would_submit: issue}}
-          else
-            result = Retry.with_backoff(fn -> do_submit(platform, issue, cred, opts) end)
-            if match?({:ok, _}, result), do: RateLimiter.record(platform)
-            result
-          end
-        end
-      end)
+      {:ok, issue} ->
+        platforms = Keyword.get(opts, :platforms, [:github])
+        dry_run = Keyword.get(opts, :dry_run, false)
+        dedupe = Keyword.get(opts, :dedupe, true)
 
-    submission_id = generate_id()
-    new_state = put_in(state.submissions[submission_id], %{
-      issue: issue,
-      results: results,
-      submitted_at: DateTime.utc_now()
-    })
+        results =
+          platforms
+          |> Enum.map(fn platform ->
+            with :ok <- RateLimiter.check(platform),
+                 :ok <- maybe_dedupe(dedupe, platform, issue) do
+              # A dry run is a preview: it still passes rate-limit and dedup
+              # checks above, but must not require credentials.
+              if dry_run do
+                {:ok, %{platform: platform, status: :dry_run, would_submit: issue}}
+              else
+                with {:ok, cred} <- Credentials.get(state.credentials, platform) do
+                  result = Retry.with_backoff(fn -> do_submit(platform, issue, cred, opts) end)
 
-    AuditLog.log(:submission, %{id: submission_id, issue: issue, results: results})
+                  # Record only real successes: never dry runs (which
+                  # short-circuit above), never errors. Recording feeds the
+                  # deduplicator so recurring themes are recognized as recurring.
+                  case result do
+                    {:ok, submission_result} ->
+                      RateLimiter.record(platform)
+                      Deduplicator.record(issue, platform, submission_result)
 
-    {:reply, {:ok, submission_id, results}, new_state}
+                    _ ->
+                      :ok
+                  end
+
+                  result
+                end
+              end
+            end
+          end)
+
+        submission_id = generate_id()
+
+        new_state =
+          put_in(state.submissions[submission_id], %{
+            issue: issue,
+            results: results,
+            submitted_at: DateTime.utc_now()
+          })
+
+        # Results are {:ok, map} / {:error, term} tuples, which Jason cannot
+        # encode — inspect them so the audit entry is JSON-safe.
+        AuditLog.log(:submission, %{
+          id: submission_id,
+          issue: issue,
+          results: Enum.map(results, &inspect/1)
+        })
+
+        {:reply, {:ok, submission_id, results}, new_state}
+    end
   end
 
   @impl true
   def handle_call({:submit_batch, issues, opts}, _from, state) do
-    results = Enum.map(issues, fn issue ->
-      # handle_call({:submit, ...}) returns a GenServer {:reply, payload, state}
-      # 3-tuple; destructure the reply payload, not a bare {:ok, id, result}.
-      {:reply, {:ok, id, result}, _new_state} = handle_call({:submit, issue, opts}, nil, state)
-      {id, result}
-    end)
+    results =
+      Enum.map(issues, fn issue ->
+        # handle_call({:submit, ...}) returns a GenServer {:reply, payload, state}
+        # 3-tuple; destructure the reply payload, not a bare {:ok, id, result}.
+        case handle_call({:submit, issue, opts}, nil, state) do
+          {:reply, {:ok, id, result}, _new_state} -> {id, result}
+          {:reply, {:error, reason}, _new_state} -> {:error, reason}
+        end
+      end)
+
     {:reply, {:ok, results}, state}
   end
 
@@ -147,7 +180,58 @@ defmodule FeedbackATron.Submitter do
 
   # Helpers
 
+  # Template-shaped submissions: when the caller supplies template_data,
+  # fetch the repo's issue-form schema, validate the answers against it
+  # (fail closed if the form cannot be fetched), and render the validated
+  # answers as the issue body. Doctrine: shaped for the receiver — their
+  # template, their taxonomy, only what is needed.
+  defp maybe_apply_template(issue) do
+    case Map.get(issue, :template_data) do
+      nil ->
+        {:ok, issue}
+
+      template_data ->
+        template_file = Map.get(issue, :template) || "bug.yml"
+        apply_template(issue, template_file, template_data)
+    end
+  end
+
+  defp apply_template(issue, template_file, template_data) do
+    case TemplateFetcher.fetch_form(issue.repo, template_file) do
+      {:error, why} ->
+        log_template_attempt(issue, template_file, false, %{error: inspect(why)})
+        {:error, {:template_unavailable, why}}
+
+      {:ok, form} ->
+        case FormValidator.validate(form, template_data) do
+          {:error, violations} ->
+            log_template_attempt(issue, template_file, false, %{violations: violations})
+            {:error, {:schema_violation, violations}}
+
+          :ok ->
+            log_template_attempt(issue, template_file, true, %{})
+            {:ok, Map.put(issue, :body, FormRenderer.render(form, template_data))}
+        end
+    end
+  end
+
+  defp log_template_attempt(issue, template_file, schema_validated, extra) do
+    AuditLog.log(
+      :submission_attempt,
+      Map.merge(
+        %{
+          repo: Map.get(issue, :repo),
+          title: Map.get(issue, :title),
+          template: template_file,
+          schema_validated: schema_validated
+        },
+        extra
+      )
+    )
+  end
+
   defp maybe_dedupe(false, _platform, _issue), do: :ok
+
   defp maybe_dedupe(true, _platform, issue) do
     case Deduplicator.check(issue) do
       {:ok, :unique} -> :ok

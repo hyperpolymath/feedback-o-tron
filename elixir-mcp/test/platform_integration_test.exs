@@ -39,6 +39,7 @@ defmodule FeedbackATron.PlatformIntegrationTest do
       for {_platform, mod} <- Channel.registry() do
         # Passing empty creds should return an error (no valid creds).
         result = mod.validate_creds(%{})
+
         assert result == :ok or match?({:error, _}, result),
                "#{inspect(mod)}.validate_creds(%{}) should return :ok or {:error, _}"
       end
@@ -47,6 +48,7 @@ defmodule FeedbackATron.PlatformIntegrationTest do
     test "no channel uses plaintext transport" do
       for {platform, mod} <- Channel.registry() do
         transport = mod.transport()
+
         refute transport == :http,
                "#{inspect(platform)} uses plaintext HTTP — all channels must use encrypted transport"
       end

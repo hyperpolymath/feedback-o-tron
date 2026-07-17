@@ -16,9 +16,23 @@ defmodule FeedbackATron.ChannelTest do
 
     test "all expected platforms are registered" do
       registry = Channel.registry()
-      expected = [:github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email,
-                  :nntp, :discourse, :mailman, :sourcehut, :jira, :matrix,
-                  :discord, :reddit]
+
+      expected = [
+        :github,
+        :gitlab,
+        :bitbucket,
+        :codeberg,
+        :bugzilla,
+        :email,
+        :nntp,
+        :discourse,
+        :mailman,
+        :sourcehut,
+        :jira,
+        :matrix,
+        :discord,
+        :reddit
+      ]
 
       for platform <- expected do
         assert Map.has_key?(registry, platform),
@@ -65,6 +79,7 @@ defmodule FeedbackATron.ChannelTest do
 
       for {platform, mod} <- Channel.registry() do
         transport = mod.transport()
+
         assert transport in allowed,
                "#{platform} uses disallowed transport: #{transport}"
       end

@@ -78,11 +78,13 @@ defmodule FeedbackATron.Channels.Jira do
       case Req.post(url, json: body, headers: headers, receive_timeout: 15_000) do
         {:ok, %{status: 201, body: resp}} ->
           issue_key = resp["key"]
-          {:ok, %{
-            platform: :jira,
-            url: "#{base_url}/browse/#{issue_key}",
-            issue_key: issue_key
-          }}
+
+          {:ok,
+           %{
+             platform: :jira,
+             url: "#{base_url}/browse/#{issue_key}",
+             issue_key: issue_key
+           }}
 
         {:ok, %{status: status, body: %{"errors" => errors}}} ->
           {:error, %{platform: :jira, status: status, error: errors}}

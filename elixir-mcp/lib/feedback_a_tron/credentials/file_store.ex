@@ -145,14 +145,20 @@ defmodule FeedbackATron.Credentials.FileStore do
 
   defp extract_netrc_entries(["machine " <> machine | rest], entries, current) do
     entries = if current, do: [current | entries], else: entries
-    extract_netrc_entries(rest, entries, %{machine: String.trim(machine), login: nil, password: nil})
+
+    extract_netrc_entries(rest, entries, %{
+      machine: String.trim(machine),
+      login: nil,
+      password: nil
+    })
   end
 
   defp extract_netrc_entries(["login " <> login | rest], entries, current) when current != nil do
     extract_netrc_entries(rest, entries, %{current | login: String.trim(login)})
   end
 
-  defp extract_netrc_entries(["password " <> password | rest], entries, current) when current != nil do
+  defp extract_netrc_entries(["password " <> password | rest], entries, current)
+       when current != nil do
     extract_netrc_entries(rest, entries, %{current | password: String.trim(password)})
   end
 
@@ -170,10 +176,11 @@ defmodule FeedbackATron.Credentials.FileStore do
           platform = safe_to_atom(platform_str)
 
           if platform do
-            cred = Map.put(values, "source", "config_file")
-                   |> Enum.map(fn {k, v} -> {String.to_atom(k), v} end)
-                   |> Enum.into(%{})
-                   |> Map.put(:source, :config_file)
+            cred =
+              Map.put(values, "source", "config_file")
+              |> Enum.map(fn {k, v} -> {String.to_atom(k), v} end)
+              |> Enum.into(%{})
+              |> Map.put(:source, :config_file)
 
             Map.update(acc, platform, [cred], &[cred | &1])
           else

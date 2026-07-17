@@ -24,11 +24,20 @@ defmodule FeedbackATron.Channels.Discourse do
   @impl true
   def validate_creds(cred) do
     cond do
-      is_nil(cred[:base_url]) -> {:error, "Discourse base URL required (e.g. https://forum.example.com)"}
-      not String.starts_with?(cred[:base_url] || "", "https://") -> {:error, "Discourse URL must be HTTPS"}
-      is_nil(cred[:api_key]) -> {:error, "Discourse API key required"}
-      is_nil(cred[:api_username]) -> {:error, "Discourse API username required"}
-      true -> :ok
+      is_nil(cred[:base_url]) ->
+        {:error, "Discourse base URL required (e.g. https://forum.example.com)"}
+
+      not String.starts_with?(cred[:base_url] || "", "https://") ->
+        {:error, "Discourse URL must be HTTPS"}
+
+      is_nil(cred[:api_key]) ->
+        {:error, "Discourse API key required"}
+
+      is_nil(cred[:api_username]) ->
+        {:error, "Discourse API username required"}
+
+      true ->
+        :ok
     end
   end
 

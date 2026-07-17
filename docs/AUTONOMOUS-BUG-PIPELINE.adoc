@@ -8,12 +8,17 @@ Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 
 [IMPORTANT]
 ====
-*Status: DRAFT / TARGET architecture.* This document describes a pipeline that spans
-three repositories (`feedback-o-tron`, `boj-server`, `boj-server-cartridges`). Most of it
-is *not yet built* — see <<reality>>. It exists to *define* the project that the
-2026-06-28 issue triplet (boj-server #262/#263/#264) failed to capture, and to make the
-built-vs-proposed boundary explicit and honest. Nothing here should be read as a
-description of shipping behaviour except where a row says `BUILT`.
+*Status: LARGELY BUILT (2026-07-09), with a precise remainder.* This document
+describes a pipeline that spans three repositories (`feedback-o-tron`, `boj-server`,
+`boj-server-cartridges`). When first written (2026-07-01) most of it was *not* built;
+that is no longer true. As of the Synthesis Engine branch: C1 (engine-side template
+fetch), C2 (synthesis/hydration), and C3 *as redefined* (Idris2 contract spec +
+Elixir runtime validation boundary) are **BUILT**; C4 (dispatch) was always real and
+now validates template payloads before dispatch. What remains: full FFI enforcement
+(the Zig bridge is a stub — the payload does not physically cross an Idris2-backed
+boundary), forge-side clustering of recurring themes, and org-level `.github`
+template fallback. See <<reality>> for the row-by-row evidence; nothing here should
+be read as shipping behaviour except where a row says `BUILT`.
 ====
 
 toc::[]
@@ -29,41 +34,54 @@ toc::[]
 * *2026-07-01* — this document written to consolidate the diagram and to record the honest
   gap between it and the code, so the project can be tracked. Canonical location: this file.
   The tracking issue lives in `boj-server` (per owner decision: doc here, tracker there).
+* *2026-07-09* — D0 resolved (see <<identity>>), C1 redrawn as engine-side, and the
+  Synthesis Engine built; this document updated to match, with the built-vs-remaining
+  boundary restated precisely.
 
 == 1. Purpose
 
 An AI agent (or a system) hits a crash. Instead of emitting a cryptic stack trace, the
 pipeline turns that event into a *well-formed, deduplicated, schema-correct bug report* filed
-to the right forge — autonomously. The design intent is that the report is shaped by the
-*target repository's own issue template*, hydrated with real context, verified at an ABI
-boundary, and dispatched to GitHub / GitLab / Bugzilla.
+to the right forge — autonomously. The report is shaped by the *target repository's own issue
+template*, hydrated with real context, validated against a verified contract, and dispatched
+to GitHub / GitLab / Bugzilla.
 
-The 2026-06-28 diagram, transcribed:
+The original 2026-06-28 diagram put the template fetch (①) in the boj Gateway. That was
+*redrawn on 2026-07-09*: the Gateway now passes only `{repo, raw_feedback, context,
+system_state}` and the **engine fetches `bug.yml` itself** (`TemplateFetcher` + 15-minute
+`TemplateCache`). Rationale: *every front door benefits* — MCP callers, the HTTP intake,
+the CLI, and the boj cartridge all get template shaping without each re-implementing (and
+inevitably skewing) the fetch. One fetcher, one cache, one parser, engine-side.
+
+The pipeline as built:
 
 [source,text]
 ----
 Agent / System Crash Trigger
-        │  Initiate Bug Report
+        │  Initiate Bug Report (any front door)
         ▼
-boj-server Gateway
-        │  ① Fetch Template Schema
-        ▼
-.github/ISSUE_TEMPLATE/bug.yml
-        │  ② Pass Schema + System State
+boj-server Gateway ──► bug-filing-mcp cartridge (boj-server-cartridges)
+        │  ① {repo, raw_feedback, context, system_state}
         ▼
 feedback-o-tron Synthesis Engine
-        ├── Hydrate Questions
-        └── Environment Questions
+  (front doors: MCP tools / HTTP intake 127.0.0.1:7722 / CLI)
+        │  ② Engine-side template fetch
         ▼
-┌─ Autonomous Fulfilment & Verification ────────────────┐
-│   LLM Context: Trajectory & Logs                       │
-│   NetworkVerifier / OS Inspection                      │
-│         └── Deduplicator: Fuzzy Match Existing Issues  │
-└────────────────────────────────────────────────────────┘
-        │  ③ Clean Validated Payload
+.github/ISSUE_TEMPLATE/bug.yml   (TemplateFetcher + TemplateCache)
+        │
         ▼
-Idris2 Verified ABI Layer
-        │  ④ Secure Multi-Platform Dispatch
+┌─ Synthesis (agent-in-the-loop, no embedded LLM) ───────────────┐
+│   IntentClassifier: usefulness gate — salvage core / reject     │
+│   Hydrator: template fields ← context + system_state            │
+│        (opt-in NetworkVerifier preflight for network reports)   │
+│   Research + Deduplicator: fuzzy-match existing issues          │
+│   open_questions ──► back to the caller's user                  │
+└──────────────────────────────────────────────────────────────────┘
+        │  ③ template_data validated against the fetched form
+        ▼
+Validation contract:
+  Idris2 Contract.idr (verified spec) + Elixir FormValidator (runtime boundary)
+        │  ④ Multi-Platform Dispatch (Elixir channels)
         ▼
 GitHub / GitLab / Bugzilla API
 ----
@@ -72,31 +90,38 @@ GitHub / GitLab / Bugzilla API
 
 [cols="1,1,3",options="header"]
 |===
-| Component | Repo | Intended responsibility
+| Component | Repo | Responsibility (as built)
 
 | *Gateway*
 | `boj-server`
-| Entry point. Fetch the target repo's issue-template schema (`.github/ISSUE_TEMPLATE/bug.yml`),
-  gather system state, and hand both to the Synthesis Engine as a boj cartridge invocation.
+| Entry point. Gathers `{repo, raw_feedback, context, system_state}` and hands it to the
+  Synthesis Engine via the `bug-filing-mcp` cartridge. It does **not** fetch the issue-template
+  schema — that moved engine-side on 2026-07-09 (see §1) so every front door benefits.
 
 | *Synthesis Engine*
 | `feedback-o-tron`
-| Hydrate the template's questions ("Hydrate" + "Environment") from LLM trajectory/logs and
-  from `NetworkVerifier` / OS inspection; deduplicate against existing issues; emit a clean,
-  schema-valid payload.
+| Fetch the target repo's issue-form templates itself (`TemplateFetcher`/`TemplateCache`);
+  gate on usefulness (`IntentClassifier`: salvage the actionable core, reject zero-signal
+  abuse with a stated, audit-logged reason); hydrate the template's fields from caller
+  context and system state (`Hydrator`, with opt-in `NetworkVerifier` preflight);
+  research existing forge issues and the local dedup history (`Research`); emit a draft
+  plus `open_questions` for anything only the user can answer (`Synthesizer`).
 
-| *Verified ABI Layer*
-| `feedback-o-tron` (+ `proven` types)
-| Validate the payload's memory layout and shape at a formally-specified Idris2/Zig FFI
-  boundary before it leaves the process.
+| *Validation contract*
+| `feedback-o-tron`
+| Validate the answered form before dispatch. Stated twice, deliberately: the Idris2
+  contract spec (`src/abi/FeedbackOTron/Contract.idr`) proves the rules; the Elixir
+  `FormValidator` enforces the same rules on the live path. The Zig FFI bridge is a stub —
+  this is a spec the runtime mirrors, not (yet) a boundary the payload physically crosses.
 
 | *Dispatch*
 | `feedback-o-tron` channels
 | File the validated payload to GitHub / GitLab / Bugzilla (and other forges).
 
 | *Cartridge packaging*
-| `boj-server-cartridges` / `boj-server/cartridges`
-| Package the Synthesis Engine as a first-class boj cartridge so the Gateway can invoke it.
+| `boj-server-cartridges`
+| The `bug-filing-mcp` cartridge wraps the engine over its localhost HTTP intake
+  (`127.0.0.1:7722`), forwarding the same request shapes the MCP tools accept.
 |===
 
 == 3. The four wire contracts
@@ -105,14 +130,18 @@ GitHub / GitLab / Bugzilla API
 |===
 | ID | Contract
 
-| *C1* | `Fetch Template Schema` — Gateway → `.github/ISSUE_TEMPLATE/bug.yml`
-| *C2* | `Pass Schema + System State` — (schema + state) → Synthesis Engine
-| *C3* | `Clean Validated Payload` — Synthesis + Dedup → Idris2 Verified ABI Layer
-| *C4* | `Secure Multi-Platform Dispatch` — Idris2 ABI → GitHub / GitLab / Bugzilla API
+| *C1* | `Fetch Template Schema` — *Synthesis Engine* → `.github/ISSUE_TEMPLATE/*.yml`
+         (engine-side; redrawn 2026-07-09 from the original Gateway-side fetch —
+         rationale: every front door benefits)
+| *C2* | `Pass Raw Feedback + Context` — Gateway/cartridge → Synthesis Engine as
+         `{repo, raw_feedback, context, system_state}`
+| *C3* | `Clean Validated Payload` — Synthesis + Dedup → validation contract
+         (Idris2 `Contract.idr` spec + Elixir `FormValidator` runtime boundary)
+| *C4* | `Multi-Platform Dispatch` — validated payload → GitHub / GitLab / Bugzilla API
 |===
 
 [[reality]]
-== 4. Current reality vs target (verified 2026-07-01)
+== 4. Current reality vs target (verified 2026-07-09)
 
 Ground-truthed against the code in both local repos. Statuses: *BUILT* (real working code),
 *PARTIAL* (real code, but unwired / bypassed / inert), *PROPOSED* (docs/diagram only, no code).
@@ -122,52 +151,80 @@ Ground-truthed against the code in both local repos. Statuses: *BUILT* (real wor
 | Contract / element | Status | Evidence
 
 | *C1* Fetch Template Schema
-| PROPOSED
-| `boj-server` Gateway (`elixir/lib/boj_rest/router.ex`) exposes only 5 cartridge endpoints
-  (`/health`, `/menu`, `/cartridges`, `/cartridge/:name`, `POST /cartridge/:name/invoke`).
-  No code fetches an issue-template schema. There is *no* `bug.yml` anywhere — both repos ship
-  plain Markdown templates (`bug_report.md`), not `.yml` issue forms.
+| BUILT
+| Engine-side, per the 2026-07-09 redraw. `synthesis/template_fetcher.ex` lists
+  `.github/ISSUE_TEMPLATE/` via the forge contents API and fetches raw YAML issue forms;
+  `synthesis/template_cache.ex` is a 15-minute-TTL ETS cache. This repo now ships real
+  `.yml` issue forms (`.github/ISSUE_TEMPLATE/bug.yml`, `feature.yml`) so the pipeline can
+  be dogfooded against itself. The Gateway passes `{repo, raw_feedback, context}` and never
+  touches the schema — every front door (MCP, HTTP, CLI, cartridge) gets the same fetch.
 
-| *C2* Pass Schema + System State
-| PROPOSED
-| There is no "Synthesis Engine" (grep `synthesis` = 0 hits). `feedback-o-tron` has *no HTTP
-  intake* (no Bandit/Plug/Cowboy in the supervision tree); its only entry point is the MCP tool
-  `submit_feedback`, whose `input_schema` requires `[title, body, repo]` — a plain issue, not a
-  schema + system-state. The one cross-repo wire (`cartridges/feedback-mcp/mod.js` → POST
-  `http://127.0.0.1:7722`) targets a backend `feedback-o-tron` does not serve.
+| *C2* Pass Raw Feedback + Context → Synthesis
+| BUILT
+| The Synthesis Engine exists (`elixir-mcp/lib/feedback_a_tron/synthesis/`: TemplateFetcher,
+  TemplateCache, IntentClassifier, Hydrator, Research, Synthesizer, FormValidator,
+  FormRenderer). Reachable three ways: MCP tools `research_feedback` + `synthesize_feedback`
+  (`mcp/tools/`), the HTTP intake (`http_intake/router.ex`, `POST /api/v1/synthesize_feedback`
+  on `127.0.0.1:7722`, off by default via `FEEDBACK_A_TRON_HTTP`), and library calls.
+  Design note: *agent-in-the-loop, no embedded LLM* — classification and hydration are
+  deterministic heuristics; the calling agent supplies trajectory/logs in `context` and
+  resolves the returned `open_questions` with its user.
 
-| *C3* Clean Validated Payload → Idris2 ABI
-| PROPOSED
-| `feedback-o-tron` has *zero* `.idr`/`.ipkg` files — all `src/abi/*.idr` were removed
-  (`PROOF-NEEDS.md` L27–31: "only RSR template scaffolding, no proofs"). `ffi/zig/src/main.zig`
-  references phantom `src/abi/*.idr` and its `feedback_o_tron_process` is a stub
-  (`_ = input; return .ok`). The Elixir core never calls any NIF/FFI. The `Deduplicator`
-  algorithm is real (`deduplicator.ex`, normalized Levenshtein — comment mislabels it
-  "Jaro-Winkler"), but `Deduplicator.record/3` is *never called*, so its indexes stay empty and
-  `check/1` always returns `{:ok, :unique}` at runtime — the dedup is *inert as integrated*.
+| *C3* Clean Validated Payload → verified contract
+| BUILT (as redefined)
+| Redefined from "Idris2 ABI the payload crosses" to "Idris2 contract spec + Elixir runtime
+  boundary". `src/abi/FeedbackOTron/Contract.idr` is a real, total, proof-carrying spec
+  (`%default total`, no `believe_me`/`postulate`; completeness, no-unknown-fields,
+  options-valid, answers-preserved lemmas; `ValidPayload` has a private constructor so the
+  only way to obtain one is `validate`). `FormValidator` enforces the same rules at runtime,
+  and `Submitter.submit/2` validates `template_data` against the fetched form *before*
+  rendering and dispatch (`submitter.ex`, `apply_template/3` → `{:error,
+  {:schema_violation, violations}}`). *Full FFI enforcement is follow-up*: `ffi/zig/src/main.zig`
+  remains a stub and the Elixir core calls no NIF — the contract is mirrored, not crossed.
 
-| *C4* Secure Multi-Platform Dispatch
+| *C4* Multi-Platform Dispatch
 | PARTIAL
 | Dispatch is *real*: `channels/github.ex` shells `gh issue create`; `channels/gitlab.ex` shells
   `glab issue create`; `channels/bugzilla.ex` does a real REST v1 POST; 14+ channels registered;
-  README documents 2 real Bugzilla bugs filed (#2437503/#2437504). *But* it runs entirely in
-  Elixir and does *not* originate from any Idris2 ABI — the "via Idris2 ABI" source in the
-  diagram is fictional.
+  README documents 2 real Bugzilla bugs filed (#2437503/#2437504). Template-shaped submissions
+  are now *validated-before-dispatch* (see C3). Still PARTIAL because it runs entirely in
+  Elixir and does not originate from any Idris2-compiled boundary — that is the FFI follow-up,
+  not a diagram fiction any more, but not built either.
 
-| MCP server + `submit_feedback` tool
+| MCP server + feedback tools
 | BUILT
-| Working JSON-RPC MCP server over stdio (`mcp/server.ex`), exposes `submit_feedback` +
-  `migration_observe`. The real front door.
+| Working JSON-RPC MCP server over stdio (`mcp/server.ex`), now exposing the three-tool
+  interactive loop — `research_feedback`, `synthesize_feedback`, `submit_feedback` (with
+  `template` + `template_data`) — plus `migration_observe`. Still the primary front door.
+
+| HTTP intake
+| BUILT
+| `http_intake/router.ex` (Bandit, localhost-only, `127.0.0.1:7722`, off by default). A thin
+  JSON adapter over the *same* `Submitter.submit/2` / `Research` / `Synthesizer` paths as the
+  MCP tools — no separate submission logic. This is the wire the `bug-filing-mcp` cartridge
+  drives; the port matches what the old cartridge always targeted.
 
 | Audit logging
 | BUILT
 | `audit_log.ex` — JSON-lines trail with rotation + secret-sanitisation, wired from `Submitter`.
+  The Synthesizer also logs every rejection with its stated reason (doctrine: rejected
+  feedback is audit-logged, never filed, never silently dropped).
+
+| Deduplicator
+| BUILT (wired)
+| Formerly inert-as-integrated. Now: `Submitter` calls `Deduplicator.check/1` before dispatch
+  and `Deduplicator.record/3` on every successful submission (`submitter.ex:114`), and
+  `Synthesis.Research` consults `check/1` during research mode — so recurring themes are
+  recognized as recurring, and one-offs stay one-offs. The comment mislabelling the algorithm
+  "Jaro-Winkler" is fixed (it computes normalized Levenshtein, and now says so).
 
 | NetworkVerifier
-| PARTIAL
-| 607 lines of real probing (ping/traceroute/dig/openssl/crt.sh/RPKI), supervised
-  (`application.ex:29`) — but *never called* by `Submitter` or any MCP tool. A disconnected
-  island; does network probing, not OS/environment inspection for a payload.
+| PARTIAL (optionally wired)
+| 607 lines of real probing (ping/traceroute/dig/openssl/crt.sh/RPKI), supervised. Now
+  reachable from the pipeline: `Hydrator` runs `NetworkVerifier.preflight_check/1` when the
+  caller opts in (`network_probe: true`) and the report looks network-related, in a
+  supervised task with a timeout so a hung probe cannot stall synthesis. Still PARTIAL:
+  opt-in only, and it does network probing, not general OS/environment inspection.
 
 | Migration-observation subsystem
 | PARTIAL
@@ -175,68 +232,73 @@ Ground-truthed against the code in both local repos. Statuses: *BUILT* (real wor
   origin of the diagram's "gather logs" box, but it does not do what the diagram claims.
 |===
 
-*Net:* the terminal dispatch (C4) is real; the template-fetch (C1), synthesis/schema-passing (C2),
-and verified-ABI (C3) stages that give the diagram its shape are unbuilt.
+*Net:* C1, C2, and C3-as-redefined are built and wired; C4's dispatch was always real and now
+receives validated payloads. The remainder is exactly: FFI-level enforcement (Zig stub),
+forge-side clustering, and org-level `.github` template fallback.
 
 [[identity]]
-== 5. OPEN DECISION — the `feedback-o-tron` vs `feedback-mcp` identity problem
+== 5. RESOLVED (2026-07-09) — the `feedback-o-tron` vs `feedback-mcp` identity problem
 
-The single most under-defined thing in this project. Today these are *two unrelated programs
-that share a name*:
+*Decision D0 is resolved.* Owner decision, 2026-07-09: **option 2 (Separate)** — the two
+programs are different products, and a *new* first-class cartridge, `bug-filing-mcp`
+(in `boj-server-cartridges`), wraps the real `feedback-o-tron` engine over its localhost
+HTTP intake (`127.0.0.1:7722`). The `feedback-mcp` sentiment counter stays what it is; no
+documentation may claim it implements or packages the engine (`EXPLAINME.adoc` corrected
+accordingly). C2's cartridge wire is therefore drawn to `bug-filing-mcp`, as the sections
+above already show.
+
+For the record, the two same-named programs that forced the decision:
 
 [cols="1,2,2",options="header"]
 |===
 | | `feedback-o-tron` (this repo) | `feedback-mcp` (boj cartridge)
 
-| What it is | v1.0.0 Elixir bug-*filing* engine | ~448-line Zig FFI *sentiment counter*
-| Tools | `submit_feedback`, `migration_observe` | `register_channel`, `start_collecting`, `submit`, `get_stats`
+| What it is | Elixir bug-*filing* engine + Synthesis Engine | ~448-line Zig FFI *sentiment counter*
+| Tools | `research_feedback`, `synthesize_feedback`, `submit_feedback`, `migration_observe` | `register_channel`, `start_collecting`, `submit`, `get_stats`
 | Data model | issue → 15+ forge channels | 8-slot in-memory tally, fork-per-request (no persistence)
-| Runtime | MCP stdio / escript; shells `gh`/`glab`, REST | `mod.js` → HTTP `127.0.0.1:7722`
+| Runtime | MCP stdio / escript / HTTP intake; shells `gh`/`glab`, REST | `mod.js` → HTTP `127.0.0.1:7722`
 | Shared code | — | *none* — separate reimplementation, name only
 |===
 
-`EXPLAINME.adoc` says "feedback-o-tron is a cartridge itself" and the cartridge `README.adoc`
-claims it "implements feedback-o-tron / is the self-dogfooding loop." *Both are false in code.*
-The cartridge is even internally stale (README lists 10 tools; only 4 exist; `cartridge.json`
-declares an `so_path` that isn't built).
+== 6. Prerequisites & gaps to close (ordered) — ALL CLOSED
 
-*Decision required (D0):* choose one —
+. *Resolve D0* (<<identity>>) — ✅ *done 2026-07-09*: option 2, new wrapping cartridge
+  `bug-filing-mcp` in `boj-server-cartridges`.
+. *Author `bug.yml` issue forms* — ✅ *done (this branch)*: `.github/ISSUE_TEMPLATE/bug.yml`
+  and `feature.yml` are real structured issue forms; `TemplateFetcher` parses them.
+. *Give `feedback-o-tron` a real intake* — ✅ *done (this branch)*: HTTP intake on
+  `127.0.0.1:7722` (`http_intake/router.ex`), accepting the synthesis-shaped request
+  (`{raw_feedback, repo, context, system_state}`), not just `{title, body, repo}`.
+. *Build the Synthesis/Hydration step* — ✅ *done (this branch)*:
+  `synthesis/{intent_classifier,hydrator,synthesizer,research,form_validator,form_renderer,
+  template_fetcher,template_cache}.ex`, agent-in-the-loop.
+. *Wire the Deduplicator* — ✅ *done (this branch)*: `Deduplicator.record/3` called on
+  successful submission (`submitter.ex:114`); `check/1` consulted pre-dispatch and in Research.
+. *Decide the ABI story* — ✅ *decided (this branch)*: Idris2 contract spec
+  (`Contract.idr`) + Elixir `FormValidator` runtime boundary; the "Idris-inside" badge is
+  replaced with the honest claim, and full FFI enforcement is tracked as follow-up work —
+  no badge ships without code behind it.
 
-. *Converge* — make `feedback-mcp` the cartridge packaging of the real `feedback-o-tron` engine
-  (cartridge invokes the engine; retire the sentiment-counter or rename it). This is what the
-  diagram assumes ("feedback-o-tron Synthesis Engine" reachable via the Gateway).
-. *Separate* — accept they are different products; rename one to end the collision
-  (e.g. cartridge → `sentiment-mcp`), and define a *new* first-class cartridge that wraps the engine.
+== 7. Honesty debt — RETIRED
 
-The rest of this architecture assumes *Converge*; if *Separate* is chosen, C2's cartridge wire
-must be redrawn to a new cartridge name.
+Every false-impression item surfaced during the 2026-07-01 verification has been retired:
 
-== 6. Prerequisites & gaps to close (ordered)
-
-. *Resolve D0* (<<identity>>) — nothing downstream is well-defined until the identity is fixed.
-. *Author `bug.yml` issue forms* — the diagram's C1 assumes structured `.yml` issue forms;
-  today only Markdown templates exist. No schema = nothing to fetch or hydrate.
-. *Give `feedback-o-tron` a real intake* — either an HTTP backend on the port the cartridge
-  already targets (`127.0.0.1:7722`) or a boj-cartridge invocation path, accepting
-  `{template_schema, system_state}` — not just `{title, body, repo}`.
-. *Build the Synthesis/Hydration step* — a module that maps template fields → hydrated answers
-  from LLM trajectory/logs + `NetworkVerifier`/OS inspection.
-. *Wire the Deduplicator* — call `Deduplicator.record/3` so dedup is not inert.
-. *Decide the ABI story* — either build a real Idris2/Zig verified boundary for the payload, or
-  *drop the "Idris-inside" claim*. Do not ship a badge with no code.
-
-== 7. Honesty debt to retire (independent of the build)
-
-These are current false-impression items surfaced during verification; fixing them is cheap and
-should not wait for the pipeline:
-
-* `README.adoc` badges "Idris-inside" / "Production Ready" — no `.idr` files exist in the repo.
-* `TOPOLOGY.md` asserts "100% / v1.0.0 Production Ready" for every box, while
-  `elixir-mcp/ARCHITECTURE.md` admits much is "aspirational/future." Reconcile to reality.
-* `Deduplicator.record/3` never called → dedup inert. Either wire it or note it as disabled.
-* `NetworkVerifier` supervised but never invoked → note as a standalone tool, not a pipeline stage.
-* `ABI-FFI-README.md` is still an unfilled `{{PROJECT}}` RSR template.
-* `deduplicator.ex` comment says "Jaro-Winkler"; the code computes normalized Levenshtein.
+* `README.adoc` badges "Idris-inside" / "Production Ready" — *retired (this branch)*: the
+  "Production Ready" badge and claims are removed; "Idris-inside" is replaced with the honest
+  form, "Idris2-verified contract spec (src/abi) + Elixir runtime validation boundary".
+* `TOPOLOGY.md` universal "100% / v1.0.0 Production Ready" — *retired (this branch)*:
+  dashboard reconciled to honest per-component statuses (overall ~75%), with an explicit
+  honesty rule added to its update protocol.
+* `Deduplicator.record/3` never called → dedup inert — *retired (this branch)*: wired
+  (`submitter.ex:114`); dedup is live end-to-end.
+* `NetworkVerifier` supervised but never invoked — *retired (this branch)*: optionally wired
+  via `Hydrator` (`network_probe: true`), and documented as opt-in rather than claimed as an
+  always-on pipeline stage.
+* `ABI-FFI-README.md` an unfilled `{{PROJECT}}` RSR template — *retired (this branch)*:
+  rewritten with project-specific content that states the three layers' real maturity
+  (Idris2 spec REAL, Elixir validator REAL, Zig FFI STUB).
+* `deduplicator.ex` comment says "Jaro-Winkler" while computing normalized Levenshtein —
+  *retired (this branch)*: comment corrected to Levenshtein.
 
 == 8. Relationship to the issue tracker
 
@@ -247,6 +309,7 @@ should not wait for the pipeline:
   ** OCI containerisation & immutable runtime isolation (was #262)
   ** Offline pre-fetch & stale-while-revalidate cartridge caching (was #263)
   ** OpenTelemetry tracing across the boj ↔ ABI ↔ cartridge boundary (was #264)
-* *Missing core-pipeline issues* — the actual "main effort," never filed: C1 template-fetch,
-  C2 synthesis/hydration, C3 verified-ABI payload, plus D0 (the identity decision). These are
-  the issues that make the pipeline exist; the triplet only hardens the box it would run in.
+* *Core-pipeline issues* — the C1 template-fetch, C2 synthesis/hydration, C3 verified-contract,
+  and D0 identity items are delivered by this branch (see <<reality>>); the remaining
+  trackable work is FFI enforcement, forge-side clustering, and org-level `.github`
+  template support (see `ROADMAP.adoc`).

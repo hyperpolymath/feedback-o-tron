@@ -85,6 +85,24 @@ defmodule FeedbackATron.SubmitterTest do
   end
 
   describe "deduplication integration" do
+    test "dry run does not record into the deduplicator" do
+      before_stats = FeedbackATron.Deduplicator.stats()
+
+      issue = %{title: "Dry run no-record test", body: "dry run body", repo: "owner/repo"}
+
+      {:ok, _id, [result]} =
+        FeedbackATron.Submitter.submit(issue, platforms: [:github], dry_run: true)
+
+      assert {:ok, %{status: :dry_run}} = result
+
+      # Recording is a cast; give it a moment so a regression would be caught.
+      Process.sleep(50)
+      after_stats = FeedbackATron.Deduplicator.stats()
+
+      assert after_stats.total_submissions == before_stats.total_submissions
+      assert after_stats.ets_size == before_stats.ets_size
+    end
+
     test "submitting a duplicate issue after recording returns error" do
       issue = %{title: "Dedup integration test", body: "unique body content", repo: "owner/repo"}
 

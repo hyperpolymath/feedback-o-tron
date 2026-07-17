@@ -54,9 +54,7 @@ defmodule FeedbackATron.Retry do
 
       {:error, reason} = error ->
         if attempt >= max or not retryable?(reason) do
-          Logger.warning(
-            "[Retry] Giving up after #{attempt}/#{max} attempts: #{inspect(reason)}"
-          )
+          Logger.warning("[Retry] Giving up after #{attempt}/#{max} attempts: #{inspect(reason)}")
 
           error
         else

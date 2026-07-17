@@ -10,7 +10,7 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
 
   use ElixirMcpServer.Tool
 
-  alias FeedbackATron.Submitter
+  alias FeedbackATron.{Params, Submitter}
   require Logger
 
   @impl true
@@ -24,6 +24,12 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
     Supports GitHub, GitLab, Bitbucket, Codeberg, and email.
     Can submit to multiple platforms simultaneously.
     Includes deduplication to avoid creating duplicate issues.
+
+    Recommended interactive loop:
+    1. research_feedback — check for duplicates and discover the repo's templates
+    2. synthesize_feedback — shape the raw feedback into a template-fitting draft
+    3. Resolve any open_questions with your user
+    4. submit_feedback — file the report with template + template_data
     """
   end
 
@@ -64,6 +70,15 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
         skip_dedupe: %{
           type: "boolean",
           description: "If true, skip duplicate checking"
+        },
+        template: %{
+          type: "string",
+          description: "Issue-form template file this submission answers (e.g. bug.yml)"
+        },
+        template_data: %{
+          type: "object",
+          description:
+            "Map of template field id -> answer; validated against the fetched form schema and rendered as the issue body"
         }
       },
       required: ["title", "body", "repo"]
@@ -75,11 +90,13 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
     issue = %{
       title: params["title"],
       body: params["body"],
-      repo: params["repo"]
+      repo: params["repo"],
+      template: params["template"],
+      template_data: params["template_data"]
     }
 
     opts = [
-      platforms: parse_platforms(params["platforms"]),
+      platforms: Params.parse_platforms(params["platforms"]),
       labels: params["labels"] || [],
       dry_run: params["dry_run"] || false,
       dedupe: not (params["skip_dedupe"] || false)
@@ -90,6 +107,7 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
         formatted = format_results(submission_id, results)
         text = format_text(formatted)
         {:ok, [%{type: "text", text: text}]}
+
       {:error, reason} ->
         Logger.error("MCP submit_feedback failed: #{inspect(reason)}")
         {:error, reason}
@@ -100,40 +118,27 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
       {:error, exception}
   end
 
-  defp parse_platforms(nil), do: [:github]
-  defp parse_platforms(platforms) when is_list(platforms) do
-    platforms
-    |> Enum.map(&platform_atom/1)
-    |> Enum.filter(& &1)
-  end
-
-  defp platform_atom(platform) do
-    case platform do
-      "github" -> :github
-      "gitlab" -> :gitlab
-      "bitbucket" -> :bitbucket
-      "codeberg" -> :codeberg
-      "bugzilla" -> :bugzilla
-      "email" -> :email
-      _ -> nil
-    end
-  end
-
   defp format_results(submission_id, results) do
-    formatted = Enum.map(results, fn
-      {:ok, %{platform: platform, url: url}} ->
-        %{platform: platform, status: "success", url: url}
-      {:ok, %{platform: platform, status: :dry_run, would_submit: issue}} ->
-        %{platform: platform, status: "dry_run", title: issue.title}
-      {:error, %{platform: platform, error: error}} ->
-        %{platform: platform, status: "error", error: inspect(error)}
-      {:error, {:duplicate_found, similar}} ->
-        %{status: "skipped", reason: "duplicate", similar_issues: similar}
-      {:error, {:similar_found, matches}} ->
-        %{status: "skipped", reason: "similar_found", similar_issues: matches}
-      {:error, other} ->
-        %{status: "error", error: inspect(other)}
-    end)
+    formatted =
+      Enum.map(results, fn
+        {:ok, %{platform: platform, url: url}} ->
+          %{platform: platform, status: "success", url: url}
+
+        {:ok, %{platform: platform, status: :dry_run, would_submit: issue}} ->
+          %{platform: platform, status: "dry_run", title: issue.title}
+
+        {:error, %{platform: platform, error: error}} ->
+          %{platform: platform, status: "error", error: inspect(error)}
+
+        {:error, {:duplicate_found, similar}} ->
+          %{status: "skipped", reason: "duplicate", similar_issues: similar}
+
+        {:error, {:similar_found, matches}} ->
+          %{status: "skipped", reason: "similar_found", similar_issues: matches}
+
+        {:error, other} ->
+          %{status: "error", error: inspect(other)}
+      end)
 
     %{
       submission_id: submission_id,

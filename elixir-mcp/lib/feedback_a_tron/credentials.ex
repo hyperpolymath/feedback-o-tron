@@ -15,12 +15,21 @@ defmodule FeedbackATron.Credentials do
 
   require Logger
 
-
-
   defstruct [
-    :github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email,
-    :nntp, :discourse, :mailman, :sourcehut, :jira, :matrix,
-    :discord, :reddit
+    :github,
+    :gitlab,
+    :bitbucket,
+    :codeberg,
+    :bugzilla,
+    :email,
+    :nntp,
+    :discourse,
+    :mailman,
+    :sourcehut,
+    :jira,
+    :matrix,
+    :discord,
+    :reddit
   ]
 
   alias FeedbackATron.Credentials.FileStore
@@ -89,16 +98,18 @@ defmodule FeedbackATron.Credentials do
     creds = []
 
     # Environment variable
-    creds = case System.get_env("GITHUB_TOKEN") || System.get_env("GH_TOKEN") do
-      nil -> creds
-      token -> [%{source: :env, token: token} | creds]
-    end
+    creds =
+      case System.get_env("GITHUB_TOKEN") || System.get_env("GH_TOKEN") do
+        nil -> creds
+        token -> [%{source: :env, token: token} | creds]
+      end
 
     # gh CLI config
-    creds = case load_gh_cli_token() do
-      nil -> creds
-      token -> [%{source: :gh_cli, token: token} | creds]
-    end
+    creds =
+      case load_gh_cli_token() do
+        nil -> creds
+        token -> [%{source: :gh_cli, token: token} | creds]
+      end
 
     creds
   end
@@ -113,7 +124,9 @@ defmodule FeedbackATron.Credentials do
           {:ok, %{"github.com" => %{"oauth_token" => token}}} -> token
           _ -> nil
         end
-      {:error, _} -> nil
+
+      {:error, _} ->
+        nil
     end
   end
 
@@ -121,15 +134,17 @@ defmodule FeedbackATron.Credentials do
   defp load_gitlab_creds do
     creds = []
 
-    creds = case System.get_env("GITLAB_TOKEN") do
-      nil -> creds
-      token -> [%{source: :env, token: token, host: "gitlab.com"} | creds]
-    end
+    creds =
+      case System.get_env("GITLAB_TOKEN") do
+        nil -> creds
+        token -> [%{source: :env, token: token, host: "gitlab.com"} | creds]
+      end
 
-    creds = case load_glab_cli_token() do
-      nil -> creds
-      {token, host} -> [%{source: :glab_cli, token: token, host: host} | creds]
-    end
+    creds =
+      case load_glab_cli_token() do
+        nil -> creds
+        {token, host} -> [%{source: :glab_cli, token: token, host: host} | creds]
+      end
 
     creds
   end
@@ -142,16 +157,22 @@ defmodule FeedbackATron.Credentials do
         case YamlElixir.read_from_string(content) do
           {:ok, %{"hosts" => %{"gitlab.com" => %{"token" => token}}}} ->
             {token, "gitlab.com"}
-          _ -> nil
+
+          _ ->
+            nil
         end
-      {:error, _} -> nil
+
+      {:error, _} ->
+        nil
     end
   end
 
   # Bitbucket: App password from env or config
   defp load_bitbucket_creds do
     case System.get_env("BITBUCKET_TOKEN") do
-      nil -> []
+      nil ->
+        []
+
       token ->
         username = System.get_env("BITBUCKET_USERNAME", "hyperpolymath")
         [%{source: :env, token: token, username: username}]
@@ -170,17 +191,42 @@ defmodule FeedbackATron.Credentials do
   defp load_bugzilla_creds do
     creds = []
 
-    creds = case System.get_env("BUGZILLA_API_KEY") do
-      nil -> creds
-      token -> [%{source: :env, token: token, base_url: System.get_env("BUGZILLA_URL", "https://bugzilla.redhat.com")} | creds]
-    end
+    creds =
+      case System.get_env("BUGZILLA_API_KEY") do
+        nil ->
+          creds
+
+        token ->
+          [
+            %{
+              source: :env,
+              token: token,
+              base_url: System.get_env("BUGZILLA_URL", "https://bugzilla.redhat.com")
+            }
+            | creds
+          ]
+      end
 
     # Also support username/password auth
-    creds = case {System.get_env("BUGZILLA_USERNAME"), System.get_env("BUGZILLA_PASSWORD")} do
-      {nil, _} -> creds
-      {_, nil} -> creds
-      {user, pass} -> [%{source: :env, username: user, password: pass, base_url: System.get_env("BUGZILLA_URL", "https://bugzilla.redhat.com")} | creds]
-    end
+    creds =
+      case {System.get_env("BUGZILLA_USERNAME"), System.get_env("BUGZILLA_PASSWORD")} do
+        {nil, _} ->
+          creds
+
+        {_, nil} ->
+          creds
+
+        {user, pass} ->
+          [
+            %{
+              source: :env,
+              username: user,
+              password: pass,
+              base_url: System.get_env("BUGZILLA_URL", "https://bugzilla.redhat.com")
+            }
+            | creds
+          ]
+      end
 
     creds
   end
@@ -188,48 +234,59 @@ defmodule FeedbackATron.Credentials do
   # Email: SMTP config
   defp load_email_config do
     case System.get_env("SMTP_HOST") do
-      nil -> nil
-      host -> %{
-        host: host,
-        port: String.to_integer(System.get_env("SMTP_PORT", "587")),
-        username: System.get_env("SMTP_USERNAME"),
-        password: System.get_env("SMTP_PASSWORD"),
-        from_address: System.get_env("SMTP_FROM", "feedback@localhost"),
-        default_recipient: System.get_env("FEEDBACK_EMAIL_TO")
-      }
+      nil ->
+        nil
+
+      host ->
+        %{
+          host: host,
+          port: String.to_integer(System.get_env("SMTP_PORT", "587")),
+          username: System.get_env("SMTP_USERNAME"),
+          password: System.get_env("SMTP_PASSWORD"),
+          from_address: System.get_env("SMTP_FROM", "feedback@localhost"),
+          default_recipient: System.get_env("FEEDBACK_EMAIL_TO")
+        }
     end
   end
 
   # NNTP: NNTPS server config
   defp load_nntp_creds do
     case System.get_env("NNTP_SERVER") do
-      nil -> []
+      nil ->
+        []
+
       server ->
-        [%{
-          source: :env,
-          server: server,
-          port: String.to_integer(System.get_env("NNTP_PORT", "563")),
-          newsgroup: System.get_env("NNTP_NEWSGROUP"),
-          username: System.get_env("NNTP_USERNAME"),
-          password: System.get_env("NNTP_PASSWORD"),
-          from: System.get_env("NNTP_FROM", "feedback-a-tron@localhost")
-        }]
+        [
+          %{
+            source: :env,
+            server: server,
+            port: String.to_integer(System.get_env("NNTP_PORT", "563")),
+            newsgroup: System.get_env("NNTP_NEWSGROUP"),
+            username: System.get_env("NNTP_USERNAME"),
+            password: System.get_env("NNTP_PASSWORD"),
+            from: System.get_env("NNTP_FROM", "feedback-a-tron@localhost")
+          }
+        ]
     end
   end
 
   # Discourse: HTTPS API
   defp load_discourse_creds do
     case System.get_env("DISCOURSE_URL") do
-      nil -> []
+      nil ->
+        []
+
       url ->
         if String.starts_with?(url, "https://") do
-          [%{
-            source: :env,
-            base_url: url,
-            api_key: System.get_env("DISCOURSE_API_KEY"),
-            api_username: System.get_env("DISCOURSE_API_USERNAME", "system"),
-            default_category_id: System.get_env("DISCOURSE_CATEGORY_ID")
-          }]
+          [
+            %{
+              source: :env,
+              base_url: url,
+              api_key: System.get_env("DISCOURSE_API_KEY"),
+              api_username: System.get_env("DISCOURSE_API_USERNAME", "system"),
+              default_category_id: System.get_env("DISCOURSE_CATEGORY_ID")
+            }
+          ]
         else
           Logger.warning("Discourse URL must be HTTPS, ignoring: #{url}")
           []
@@ -242,35 +299,47 @@ defmodule FeedbackATron.Credentials do
     creds = []
 
     # HyperKitty REST API
-    creds = case System.get_env("HYPERKITTY_URL") do
-      nil -> creds
-      url ->
-        if String.starts_with?(url, "https://") do
-          [%{
-            source: :env,
-            hyperkitty_url: url,
-            api_key: System.get_env("HYPERKITTY_API_KEY"),
-            list_id: System.get_env("MAILMAN_LIST_ID")
-          } | creds]
-        else
+    creds =
+      case System.get_env("HYPERKITTY_URL") do
+        nil ->
           creds
-        end
-    end
+
+        url ->
+          if String.starts_with?(url, "https://") do
+            [
+              %{
+                source: :env,
+                hyperkitty_url: url,
+                api_key: System.get_env("HYPERKITTY_API_KEY"),
+                list_id: System.get_env("MAILMAN_LIST_ID")
+              }
+              | creds
+            ]
+          else
+            creds
+          end
+      end
 
     # Direct SMTPS to list address
-    creds = case System.get_env("MAILMAN_LIST_ADDRESS") do
-      nil -> creds
-      list_addr ->
-        [%{
-          source: :env,
-          list_address: list_addr,
-          smtp_server: System.get_env("MAILMAN_SMTP_SERVER"),
-          smtp_port: String.to_integer(System.get_env("MAILMAN_SMTP_PORT", "465")),
-          smtp_username: System.get_env("MAILMAN_SMTP_USERNAME"),
-          smtp_password: System.get_env("MAILMAN_SMTP_PASSWORD"),
-          from: System.get_env("MAILMAN_FROM", "feedback-a-tron@localhost")
-        } | creds]
-    end
+    creds =
+      case System.get_env("MAILMAN_LIST_ADDRESS") do
+        nil ->
+          creds
+
+        list_addr ->
+          [
+            %{
+              source: :env,
+              list_address: list_addr,
+              smtp_server: System.get_env("MAILMAN_SMTP_SERVER"),
+              smtp_port: String.to_integer(System.get_env("MAILMAN_SMTP_PORT", "465")),
+              smtp_username: System.get_env("MAILMAN_SMTP_USERNAME"),
+              smtp_password: System.get_env("MAILMAN_SMTP_PASSWORD"),
+              from: System.get_env("MAILMAN_FROM", "feedback-a-tron@localhost")
+            }
+            | creds
+          ]
+      end
 
     creds
   end
@@ -278,33 +347,41 @@ defmodule FeedbackATron.Credentials do
   # SourceHut: personal access token
   defp load_sourcehut_creds do
     case System.get_env("SRHT_TOKEN") do
-      nil -> []
+      nil ->
+        []
+
       token ->
-        [%{
-          source: :env,
-          token: token,
-          tracker: System.get_env("SRHT_TRACKER"),
-          api_base: System.get_env("SRHT_API_BASE", "https://todo.sr.ht")
-        }]
+        [
+          %{
+            source: :env,
+            token: token,
+            tracker: System.get_env("SRHT_TRACKER"),
+            api_base: System.get_env("SRHT_API_BASE", "https://todo.sr.ht")
+          }
+        ]
     end
   end
 
   # Jira: Cloud (email + API token) or Server (PAT)
   defp load_jira_creds do
     case System.get_env("JIRA_URL") do
-      nil -> []
+      nil ->
+        []
+
       url ->
         if String.starts_with?(url, "https://") do
-          [%{
-            source: :env,
-            base_url: url,
-            email: System.get_env("JIRA_EMAIL"),
-            api_token: System.get_env("JIRA_API_TOKEN"),
-            token: System.get_env("JIRA_TOKEN"),
-            project_key: System.get_env("JIRA_PROJECT_KEY"),
-            default_issue_type: System.get_env("JIRA_ISSUE_TYPE", "Task"),
-            api_version: System.get_env("JIRA_API_VERSION", "2")
-          }]
+          [
+            %{
+              source: :env,
+              base_url: url,
+              email: System.get_env("JIRA_EMAIL"),
+              api_token: System.get_env("JIRA_API_TOKEN"),
+              token: System.get_env("JIRA_TOKEN"),
+              project_key: System.get_env("JIRA_PROJECT_KEY"),
+              default_issue_type: System.get_env("JIRA_ISSUE_TYPE", "Task"),
+              api_version: System.get_env("JIRA_API_VERSION", "2")
+            }
+          ]
         else
           Logger.warning("Jira URL must be HTTPS, ignoring: #{url}")
           []
@@ -315,15 +392,19 @@ defmodule FeedbackATron.Credentials do
   # Matrix: homeserver + access token
   defp load_matrix_creds do
     case System.get_env("MATRIX_HOMESERVER") do
-      nil -> []
+      nil ->
+        []
+
       homeserver ->
         if String.starts_with?(homeserver, "https://") do
-          [%{
-            source: :env,
-            homeserver: homeserver,
-            access_token: System.get_env("MATRIX_ACCESS_TOKEN"),
-            room_id: System.get_env("MATRIX_ROOM_ID")
-          }]
+          [
+            %{
+              source: :env,
+              homeserver: homeserver,
+              access_token: System.get_env("MATRIX_ACCESS_TOKEN"),
+              room_id: System.get_env("MATRIX_ROOM_ID")
+            }
+          ]
         else
           Logger.warning("Matrix homeserver must be HTTPS, ignoring: #{homeserver}")
           []
@@ -336,29 +417,39 @@ defmodule FeedbackATron.Credentials do
     creds = []
 
     # Bot mode: token + channel_id
-    creds = case System.get_env("DISCORD_BOT_TOKEN") do
-      nil -> creds
-      token ->
-        channel_id = System.get_env("DISCORD_CHANNEL_ID")
-        if channel_id do
-          [%{source: :env, token: "Bot #{token}", channel_id: channel_id} | creds]
-        else
-          Logger.warning("DISCORD_BOT_TOKEN set but DISCORD_CHANNEL_ID missing, skipping bot mode")
+    creds =
+      case System.get_env("DISCORD_BOT_TOKEN") do
+        nil ->
           creds
-        end
-    end
+
+        token ->
+          channel_id = System.get_env("DISCORD_CHANNEL_ID")
+
+          if channel_id do
+            [%{source: :env, token: "Bot #{token}", channel_id: channel_id} | creds]
+          else
+            Logger.warning(
+              "DISCORD_BOT_TOKEN set but DISCORD_CHANNEL_ID missing, skipping bot mode"
+            )
+
+            creds
+          end
+      end
 
     # Webhook mode: standalone webhook URL
-    creds = case System.get_env("DISCORD_WEBHOOK_URL") do
-      nil -> creds
-      url ->
-        if String.starts_with?(url, "https://discord.com/api/webhooks/") do
-          [%{source: :env, webhook_url: url} | creds]
-        else
-          Logger.warning("DISCORD_WEBHOOK_URL must be HTTPS Discord webhook, ignoring: #{url}")
+    creds =
+      case System.get_env("DISCORD_WEBHOOK_URL") do
+        nil ->
           creds
-        end
-    end
+
+        url ->
+          if String.starts_with?(url, "https://discord.com/api/webhooks/") do
+            [%{source: :env, webhook_url: url} | creds]
+          else
+            Logger.warning("DISCORD_WEBHOOK_URL must be HTTPS Discord webhook, ignoring: #{url}")
+            creds
+          end
+      end
 
     creds
   end
@@ -366,20 +457,26 @@ defmodule FeedbackATron.Credentials do
   # Reddit: OAuth2 script app credentials
   defp load_reddit_creds do
     case {System.get_env("REDDIT_CLIENT_ID"), System.get_env("REDDIT_CLIENT_SECRET")} do
-      {nil, _} -> []
-      {_, nil} -> []
+      {nil, _} ->
+        []
+
+      {_, nil} ->
+        []
+
       {client_id, client_secret} ->
         username = System.get_env("REDDIT_USERNAME")
         password = System.get_env("REDDIT_PASSWORD")
 
         if username && password do
-          [%{
-            source: :env,
-            client_id: client_id,
-            client_secret: client_secret,
-            username: username,
-            password: password
-          }]
+          [
+            %{
+              source: :env,
+              client_id: client_id,
+              client_secret: client_secret,
+              username: username,
+              password: password
+            }
+          ]
         else
           Logger.warning("REDDIT_CLIENT_ID/SECRET set but REDDIT_USERNAME/PASSWORD missing")
           []

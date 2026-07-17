@@ -68,7 +68,11 @@ defmodule FeedbackATron.SecureDNS do
         {"Accept", "application/dns-json"}
       ]
 
-      case Req.get(query_url, headers: headers, receive_timeout: 5_000, connect_options: [timeout: 3_000]) do
+      case Req.get(query_url,
+             headers: headers,
+             receive_timeout: 5_000,
+             connect_options: [timeout: 3_000]
+           ) do
         {:ok, %{status: 200, body: body}} when is_map(body) ->
           case parse_doh_response(body) do
             [] ->
@@ -95,7 +99,8 @@ defmodule FeedbackATron.SecureDNS do
   Resolve via DNS over TLS (DoT) using Erlang's :ssl and raw DNS wire format.
   """
   def resolve_dot(hostname) do
-    Enum.reduce_while(@dot_resolvers, {:error, :all_resolvers_failed}, fn {ip, port, name}, _acc ->
+    Enum.reduce_while(@dot_resolvers, {:error, :all_resolvers_failed}, fn {ip, port, name},
+                                                                          _acc ->
       case do_dot_query(ip, port, hostname) do
         {:ok, ips} ->
           Logger.debug("DoT #{name}: resolved #{hostname} → #{inspect(ips)}")
@@ -178,8 +183,10 @@ defmodule FeedbackATron.SecureDNS do
   end
 
   # Parse DNS response — extract A record IPs
-  defp parse_dns_response(<<_length::16, _txn::16, _flags::16, _qdcount::16, ancount::16,
-                            _nscount::16, _arcount::16, rest::binary>>) do
+  defp parse_dns_response(
+         <<_length::16, _txn::16, _flags::16, _qdcount::16, ancount::16, _nscount::16,
+           _arcount::16, rest::binary>>
+       ) do
     # Skip question section
     {rest, _} = skip_question(rest)
     # Parse answer records

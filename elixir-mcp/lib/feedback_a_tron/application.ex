@@ -8,6 +8,7 @@ defmodule FeedbackATron.Application do
   - Submitter: Multi-platform issue submission
   - Deduplicator: Prevents duplicate submissions
   - AuditLog: Records all operations
+  - Synthesis.TemplateCache: TTL cache for fetched issue-form templates
   - NetworkVerifier: Pre-flight network checks
   - MigrationObserver: ReScript migration session tracking (optional)
   - BatchReviewer: Issue review queue (optional, with migration observer)
@@ -24,6 +25,7 @@ defmodule FeedbackATron.Application do
       FeedbackATron.Submitter,
       FeedbackATron.Deduplicator,
       FeedbackATron.AuditLog,
+      FeedbackATron.Synthesis.TemplateCache,
 
       # Network verification (optional, can be disabled)
       {FeedbackATron.NetworkVerifier, enabled: true}
@@ -61,7 +63,11 @@ defmodule FeedbackATron.Application do
         FeedbackATron.MCP.Server,
         name: "feedback-a-tron",
         version: Application.spec(:feedback_a_tron, :vsn) |> to_string(),
-        tools: [FeedbackATron.MCP.Tools.SubmitFeedback]
+        tools: [
+          FeedbackATron.MCP.Tools.SubmitFeedback,
+          FeedbackATron.MCP.Tools.ResearchFeedback,
+          FeedbackATron.MCP.Tools.SynthesizeFeedback
+        ]
       }
 
       children ++ [mcp_child]
@@ -88,7 +94,9 @@ defmodule FeedbackATron.Application do
 
     env_on? =
       case env_enabled? do
-        nil -> false
+        nil ->
+          false
+
         value ->
           normalized =
             value
@@ -141,7 +149,9 @@ defmodule FeedbackATron.Application do
 
     env_on? =
       case env_val do
-        nil -> false
+        nil ->
+          false
+
         value ->
           normalized = value |> String.trim() |> String.downcase()
           Enum.member?(["1", "true", "yes", "on"], normalized)

@@ -1,0 +1,108 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# Proofs Gate — type-check the Idris2 contract layer (src/abi/) and enforce
+# the empty trusted base (no believe_me / postulate / assert_total).
+#
+# FeedbackOTron.Contract is the verified CONTRACT SPEC for the Elixir
+# FormValidator (see ABI-FFI-README.md). This gate keeps it honestly
+# compiling: every push/PR touching src/abi/** re-checks the package under
+# a pinned Idris2 toolchain (same asdf+Chez install pattern as boj-server's
+# proofs gate).
+#
+# NOTE: this workflow is path-filtered because it is NOT a required status
+# check. If it is ever promoted to required, the `on.*.paths` filters MUST
+# be removed and replaced with an always-run `changes` detector job (see
+# boj-server .github/workflows/proofs.yml and the estate CI conventions:
+# a path-filtered required check that never triggers reports as permanently
+# "Expected" and deadlocks the PR).
+name: Proofs Gate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/abi/**'
+      - '.github/workflows/proofs.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/abi/**'
+      - '.github/workflows/proofs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proofs-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IDRIS2_VERSION: '0.7.0'
+
+jobs:
+  # Cheap, dependency-free gate: the contract layer claims an EMPTY trusted
+  # base — no believe_me, no postulate, no assert_total anywhere in src/abi.
+  trusted-base:
+    name: Trusted-base audit (empty — no axioms)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Enforce empty trusted base
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r -d '' f; do
+            # Strip `--` and `|||` comments so documentation may mention the
+            # banned constructs without tripping the audit.
+            if sed -e 's/--.*$//' -e 's/|||.*$//' "$f" \
+                 | grep -nE 'believe_me|postulate|assert_total'; then
+              echo "::error file=$f::Unsound construct in $f — the contract layer must stay axiom-free."
+              found=1
+            fi
+          done < <(find src/abi -name '*.idr' -print0)
+          if [ "$found" -eq 0 ]; then echo "Trusted base is empty."; fi
+          exit "$found"
+
+  typecheck:
+    name: Idris2 type-check (contract layer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install build deps (Chez Scheme + GMP)
+        run: sudo apt-get update && sudo apt-get install -y chezscheme libgmp-dev build-essential
+
+      - name: Cache asdf + Idris2 toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.asdf
+          key: idris2-asdf-${{ runner.os }}-${{ env.IDRIS2_VERSION }}
+
+      - name: Install asdf + Idris2 ${{ env.IDRIS2_VERSION }}
+        env:
+          # Ubuntu's chezscheme package installs the interpreter as `scheme`;
+          # Idris2's bootstrap Makefile reads $SCHEME (defaults to `chez`).
+          SCHEME: scheme
+        run: |
+          set -euo pipefail
+          if [ ! -f "$HOME/.asdf/asdf.sh" ]; then
+            git clone --depth 1 --branch v0.14.0 https://github.com/asdf-vm/asdf.git "$HOME/.asdf"
+          fi
+          . "$HOME/.asdf/asdf.sh"
+          asdf plugin add idris2 || true
+          asdf install idris2 "$IDRIS2_VERSION"
+          asdf global  idris2 "$IDRIS2_VERSION"
+
+      - name: Put Idris2 on PATH
+        run: echo "$HOME/.asdf/shims" >> "$GITHUB_PATH"
+
+      - name: Idris2 version
+        run: idris2 --version
+
+      - name: Type-check the contract package
+        working-directory: src/abi
+        run: idris2 --typecheck feedback-o-tron.ipkg

@@ -18,9 +18,15 @@ defmodule FeedbackATron.AuditLogTest do
   describe "log/2" do
     test "accepts valid event types without crashing" do
       valid_events = [
-        :submission, :submission_attempt, :submission_success,
-        :submission_failure, :network_check, :dedup_check,
-        :dedup_match, :credential_use, :credential_rotate,
+        :submission,
+        :submission_attempt,
+        :submission_success,
+        :submission_failure,
+        :network_check,
+        :dedup_check,
+        :dedup_match,
+        :credential_use,
+        :credential_rotate,
         :config_change
       ]
 
@@ -139,6 +145,7 @@ defmodule FeedbackATron.AuditLogTest do
 
       if last do
         details = get_in(last, ["data", "details"])
+
         if is_map(details) do
           refute Map.has_key?(details, "token")
           refute Map.has_key?(details, "password")

@@ -25,11 +25,16 @@ defmodule FeedbackATron.Channels.GitLab do
     labels = Keyword.get(opts, :labels, []) |> Enum.join(",")
 
     args = [
-      "issue", "create",
-      "--repo", repo,
-      "--title", issue.title,
-      "--description", issue.body,
-      "--label", labels
+      "issue",
+      "create",
+      "--repo",
+      repo,
+      "--title",
+      issue.title,
+      "--description",
+      issue.body,
+      "--label",
+      labels
     ]
 
     case System.cmd("glab", args, env: [{"GITLAB_TOKEN", cred.token}]) do
@@ -39,13 +44,20 @@ defmodule FeedbackATron.Channels.GitLab do
       {error, _code} ->
         cond do
           String.contains?(error, "401") or String.contains?(error, "auth") ->
-            {:error, %FeedbackATron.Error.AuthenticationError{platform: :gitlab, reason: "token rejected"}}
+            {:error,
+             %FeedbackATron.Error.AuthenticationError{platform: :gitlab, reason: "token rejected"}}
 
           String.contains?(error, "429") ->
-            {:error, %FeedbackATron.Error.RateLimitError{platform: :gitlab, resets_at: nil, remaining: 0}}
+            {:error,
+             %FeedbackATron.Error.RateLimitError{platform: :gitlab, resets_at: nil, remaining: 0}}
 
           true ->
-            {:error, %FeedbackATron.Error.PlatformError{platform: :gitlab, status: nil, body: String.trim(error)}}
+            {:error,
+             %FeedbackATron.Error.PlatformError{
+               platform: :gitlab,
+               status: nil,
+               body: String.trim(error)
+             }}
         end
     end
   end

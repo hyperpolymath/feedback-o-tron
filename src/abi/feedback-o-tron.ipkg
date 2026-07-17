@@ -1,0 +1,18 @@
+-- SPDX-License-Identifier: MPL-2.0
+-- Idris2 package file for the feedback-o-tron verified contract layer.
+-- (Package identifiers cannot contain hyphens in Idris2 0.7.0's ipkg
+-- grammar, hence `feedbackotron`; the file keeps the repo's name.)
+
+package feedbackotron
+
+authors    = "Jonathan D.A. Jewell"
+version    = 0.1.0
+license    = "MPL-2.0"
+brief      = "Formally verified form-validation contract for feedback-o-tron"
+readme     = "../../README.adoc"
+
+sourcedir  = "."
+
+modules    = FeedbackOTron.Contract
+
+depends    = base

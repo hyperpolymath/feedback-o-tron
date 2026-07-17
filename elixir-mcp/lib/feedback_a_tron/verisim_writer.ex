@@ -48,27 +48,25 @@ defmodule FeedbackATron.VeriSimWriter do
     repo_name = extract_repo_name(session.repo_path)
     before_health = get_in(session.before_snapshot, ["migration_metrics", "health_score"]) || 0.0
     after_health = get_in(session.after_snapshot, ["migration_metrics", "health_score"]) || 0.0
-    version_bracket = get_in(session.after_snapshot, ["migration_metrics", "version_bracket"]) || "unknown"
+
+    version_bracket =
+      get_in(session.after_snapshot, ["migration_metrics", "version_bracket"]) || "unknown"
 
     %{
       "schema" => "verisimdb.hexad.v1",
       "hexad_id" => hexad_id,
       "created_at" => now,
-
       "document" => %{
         "title" => "Migration session: #{session.label} (#{repo_name})",
         "body" => build_document_body(session),
         "content_type" => "text/markdown"
       },
-
       "temporal" => %{
         "started_at" => DateTime.to_iso8601(session.started_at),
-        "ended_at" =>
-          if(session.ended_at, do: DateTime.to_iso8601(session.ended_at), else: nil),
+        "ended_at" => if(session.ended_at, do: DateTime.to_iso8601(session.ended_at), else: nil),
         "duration_seconds" => compute_duration(session),
         "event_type" => "rescript_migration_session"
       },
-
       "provenance" => %{
         "source" => "feedback-o-tron",
         "actor" => "migration-observer",
@@ -79,7 +77,6 @@ defmodule FeedbackATron.VeriSimWriter do
           %{"tool" => "panic-attack", "version" => "2.0.0"}
         ]
       },
-
       "semantic" => %{
         "types" => ["rescript_migration", "migration_session", "observatory"],
         "tags" => [
@@ -96,11 +93,9 @@ defmodule FeedbackATron.VeriSimWriter do
           session.events
           |> Enum.count(fn e -> e.type == :issue end)
       },
-
       "graph" => %{
         "triples" => build_graph_triples(hexad_id, session)
       },
-
       "vector" => %{
         "text_for_embedding" => build_embedding_text(session),
         "dimensions" => nil
@@ -174,7 +169,7 @@ defmodule FeedbackATron.VeriSimWriter do
     event_triples =
       session.events
       |> Enum.with_index()
-      |> Enum.map(fn {event, idx} ->
+      |> Enum.map(fn {_event, idx} ->
         event_uri = "#{session_uri}:event:#{idx}"
         [session_uri, "has_event", event_uri]
       end)
