@@ -53,6 +53,28 @@ The following files in `.machine_readable/` contain structured project metadata:
 | React Native | Tauri/Dioxus |
 | Flutter/Dart | Tauri/Dioxus |
 
+### ABI / FFI Baseline (Estate-wide, verified 2026-07-17)
+
+- **Any ABI must be Idris2** — dependent-type proofs, `%default total`, zero
+  `believe_me`/`postulate`/`assert_total` in the trusted core. This repo's own
+  `src/abi/FeedbackOTron/Contract.idr` follows this (real, CI-checked by
+  `proofs.yml`).
+- **Any FFI must be Zig.** This repo's `ffi/zig/src/main.zig` is currently a
+  labeled stub — no other language is substituted for it.
+- **The "unified adapter" protocol-bridge layer** (Zig, single loopback
+  listener, exposure-gated dispatch into one C ABI — see `boj-server` and
+  `boj-server-cartridges` CLAUDE.md for the full contract) is a **boj
+  cartridge** concept. This repo is the wrapped *engine*, not a cartridge
+  itself (the cartridge is `bug-filing-mcp` in `boj-server-cartridges`), so it
+  does not carry an `adapter/` directory of its own. Its front doors (MCP
+  stdio/TCP, HTTP intake) are Elixir/OTP by architecture decision, unrelated
+  to the Zig adapter pattern.
+- Naming lineage: the fuller "Hexadeca-Connector" (16-protocol-surface) pattern
+  lives in `hyperpolymath/hypatia` and `hyperpolymath/proven-servers`, descended
+  from a **retired** V-lang reference (`developer-ecosystem/v-ecosystem/v_api_interfaces`),
+  replaced by Zig+Idris2+Rust-client per the estate-wide V-lang ban
+  (2026-04-10). Never resurrect a V-lang adapter/ABI/FFI.
+
 ### Mobile Development
 
 **No exceptions for Kotlin/Swift** - use Rust-first approach:
