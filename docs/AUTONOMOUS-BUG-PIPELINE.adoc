@@ -294,7 +294,7 @@ Every false-impression item surfaced during the 2026-07-01 verification has been
 * `NetworkVerifier` supervised but never invoked — *retired (this branch)*: optionally wired
   via `Hydrator` (`network_probe: true`), and documented as opt-in rather than claimed as an
   always-on pipeline stage.
-* `ABI-FFI-README.md` an unfilled `{{PROJECT}}` RSR template — *retired (this branch)*:
+* `ABI-FFI-README.md` an unfilled `FEEDBACK_O_TRON` RSR template — *retired (this branch)*:
   rewritten with project-specific content that states the three layers' real maturity
   (Idris2 spec REAL, Elixir validator REAL, Zig FFI STUB).
 * `deduplicator.ex` comment says "Jaro-Winkler" while computing normalized Levenshtein —
