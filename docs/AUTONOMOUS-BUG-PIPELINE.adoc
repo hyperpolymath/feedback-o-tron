@@ -228,7 +228,7 @@ Ground-truthed against the code in both local repos. Statuses: *BUILT* (real wor
 
 | Migration-observation subsystem
 | PARTIAL
-| Real but off by default; observes ReScript *code*-migrations, not LLM trajectories. Likely the
+| Real but off by default; observes AffineScript *code*-migrations, not LLM trajectories. Likely the
   origin of the diagram's "gather logs" box, but it does not do what the diagram claims.
 |===
 

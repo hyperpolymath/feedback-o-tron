@@ -16,7 +16,7 @@ A comprehensive system for tracking, analyzing, and visualizing GitHub activity 
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              User Interfaces                                 │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  ReScript-Tea Web UI     │  CLI (Elixir escript)  │  Claude MCP Integration │
+│  AffineScript-Tea Web UI     │  CLI (Elixir escript)  │  Claude MCP Integration │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -39,13 +39,13 @@ A comprehensive system for tracking, analyzing, and visualizing GitHub activity 
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          Configuration Layer                                 │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  Nickel schemas → JSON, TOML, Nix, Guix SCM outputs                         │
+│  Nickel schemas → JSON, TOML, Guix, Guix SCM outputs                         │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              Packaging                                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  nerdctl + Wolfi OCI  │  Guix channel (primary)  │  Nix flake (fallback)    │
+│  nerdctl + Wolfi OCI  │  Guix channel (primary)  │  Guix flake (fallback)    │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -91,7 +91,7 @@ gh:issue/12114 a gh:Issue ;
 
 **Rationale:**
 - Typed configuration language
-- Can output JSON, TOML, Nix, and with adapters: Guix SCM
+- Can output JSON, TOML, Guix, and with adapters: Guix SCM
 - Contracts for validation
 - Merging/inheritance for repo-specific overrides
 
@@ -108,7 +108,7 @@ gh:issue/12114 a gh:Issue ;
 - Option B: Subprocess with JSON stdin/stdout
 - Option C: Ports with MessagePack (faster)
 
-### 5. Frontend: ReScript-Tea
+### 5. Frontend: AffineScript-Tea
 
 **Rationale:**
 - Type-safe
@@ -116,7 +116,7 @@ gh:issue/12114 a gh:Issue ;
 - Compiles to small JS bundles
 - You specified it
 
-**Alternative considered:** Elm itself — but ReScript has better JS interop.
+**Alternative considered:** Elm itself — but AffineScript has better JS interop.
 
 ### 6. Change Tracking: GitHub Webhooks + Polling Hybrid
 
@@ -127,13 +127,13 @@ gh:issue/12114 a gh:Issue ;
 
 Elixir GenServer manages subscription state, debounces, deduplicates.
 
-### 7. Packaging: nerdctl + Wolfi (primary), Guix channel, Nix fallback
+### 7. Packaging: nerdctl + Wolfi (primary), Guix channel, Guix fallback
 
 **Why this order:**
 - **Wolfi** is security-focused, minimal, apk-based — good for OCI
 - **nerdctl** is rootless containerd (Podman-like, your preference)
 - **Guix** for reproducible, auditable builds (your preference for provenance)
-- **Nix** as fallback for ecosystems where Guix packages lag
+- **Guix** as fallback for ecosystems where Guix packages lag
 
 ## Detailed Component Specs
 
@@ -301,9 +301,9 @@ end
 end # module
 ```
 
-### ReScript-Tea Frontend Structure
+### AffineScript-Tea Frontend Structure
 
-```rescript
+```affinescript
 // src/App.res
 module App = {
   type model = {
@@ -846,10 +846,10 @@ change tracking.")
    (description "Run the Observatory GitHub intelligence platform.")))
 ```
 
-### Nix Flake (Fallback)
+### Guix Flake (Fallback)
 
-```nix
-# flake.nix
+```guix
+# flake.guix
 {
   description = "Observatory - GitHub Intelligence Platform";
 
@@ -880,12 +880,12 @@ change tracking.")
           pname = "observatory";
           version = "0.1.0";
           src = ./.;
-          mixNixDeps = import ./deps.nix { inherit pkgs; };
+          mixNixDeps = import ./deps.guix { inherit pkgs; };
         };
 
         devShells.default = pkgs.mkShell {
           buildInputs = observatoryDeps ++ [
-            pkgs.nodePackages.npm  # For ReScript build
+            pkgs.nodePackages.npm  # For AffineScript build
             pkgs.nerdctl
           ];
           
@@ -950,11 +950,11 @@ change tracking.")
 | Nickel config schema | 2h | Write full schema with outputs |
 | Oxigraph integration | 4h | NIF or HTTP bridge to Rust binary |
 | Julia analytics module | 3h | Implement Observatory.jl |
-| ReScript-Tea frontend | 8h | Full UI with charts |
+| AffineScript-Tea frontend | 8h | Full UI with charts |
 | Elixir HTTP API | 2h | Bandit + REST endpoints |
 | Container build | 2h | Wolfi Dockerfile |
 | Guix channel | 3h | Package definitions |
-| Nix flake | 2h | Module + overlay |
+| Guix flake | 2h | Module + overlay |
 | Ada integration | 4h | Keep for SPARK-verified core types if desired |
 
 ### 🤔 Open Design Questions
@@ -975,7 +975,7 @@ change tracking.")
 2. **Nickel config** - Define schema, test outputs
 3. **Julia analytics** - Implement contribution stats
 4. **Container** - Build Wolfi image, test locally
-5. **Frontend** - Scaffold ReScript-Tea, connect to API
-6. **Guix/Nix** - Package for reproducible deployment
+5. **Frontend** - Scaffold AffineScript-Tea, connect to API
+6. **Guix/Guix** - Package for reproducible deployment
 
 Want me to continue with any specific component?

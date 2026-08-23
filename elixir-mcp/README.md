@@ -14,9 +14,9 @@ Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 - **Multi-Repo Scraping** — Track many repositories with rate limiting
 - **Change Subscriptions** — Webhooks + polling for real-time updates
 - **Julia Analytics** — Statistical analysis of contribution patterns
-- **ReScript-Tea Frontend** — Type-safe web visualization (planned)
+- **AffineScript-Tea Frontend** — Type-safe web visualization (planned)
 - **Semantic Storage** — Oxigraph RDF/SPARQL (optional)
-- **Reproducible Builds** — Guix channel + Nix flake + Wolfi containers
+- **Reproducible Builds** — Guix channel + Guix flake + Wolfi containers
 
 ## Quick Start
 
@@ -274,18 +274,18 @@ guix install observatory
 guix system reconfigure config.scm
 ```
 
-### Nix
+### Guix
 
 ```bash
 # Development shell
-nix develop
+guix develop
 
 # Build
-nix build
+guix build
 
 # NixOS module
 {
-  imports = [ ./flake.nix#nixosModules.default ];
+  imports = [ ./flake.guix#nixosModules.default ];
   services.observatory.enable = true;
 }
 ```
@@ -333,10 +333,10 @@ observatory/
 │       └── Observatory.jl     # Julia analytics
 ├── config/
 │   └── schema.ncl             # Nickel config schema
-├── frontend/                   # ReScript-Tea (planned)
+├── frontend/                   # AffineScript-Tea (planned)
 ├── guix/                       # Guix channel
 ├── mix.exs
-├── flake.nix
+├── flake.guix
 └── ARCHITECTURE.md
 ```
 

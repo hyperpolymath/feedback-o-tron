@@ -1,4 +1,4 @@
-# feedback-a-tron - Nix Development Tasks
+# feedback-a-tron - Guix Development Tasks
 set shell := ["bash", "-uc"]
 set dotenv-load := true
 
@@ -8,35 +8,35 @@ project := "feedback-a-tron"
 default:
     @just --list --unsorted
 
-# Build with nix
+# Build with guix
 build:
-    nix build
+    guix build
 
 # Build and show output path
 build-show:
-    nix build --print-out-paths
+    guix build --print-out-paths
 
 # Enter dev shell
 develop:
-    nix develop
+    guix develop
 
 # Check flake
 check:
-    nix flake check
+    guix flake check
 
 # Update flake inputs
 update:
-    nix flake update
+    guix flake update
 
 # Show flake info
 info:
-    nix flake info
+    guix flake info
 
-# Format nix files
+# Format guix files
 fmt:
-    nixfmt *.nix || nix fmt
+    nixfmt *.guix || guix fmt
 
-# Run nix linter
+# Run guix linter
 lint:
     statix check . || true
 
@@ -46,7 +46,7 @@ clean:
 
 # Show derivation
 show-drv:
-    nix derivation show
+    guix derivation show
 
 # All checks before commit
 pre-commit: check

@@ -25,14 +25,14 @@ This project follows the **Hyperpolymath RSR 2026** language standard. Before co
 
 * Elixir >= 1.15 with OTP >= 26
 * Zig (for FFI development)
-* Nix or Guix (optional, for reproducible environments)
+* Guix or Guix (optional, for reproducible environments)
 
 === Setup
 
 [source,bash]
 ----
-# Using Nix flake
-nix develop
+# Using Guix flake
+guix develop
 
 # Or manually
 cd elixir-mcp
