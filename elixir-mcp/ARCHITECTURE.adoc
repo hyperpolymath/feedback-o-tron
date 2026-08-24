@@ -1,18 +1,24 @@
-<!--
-SPDX-License-Identifier: CC-BY-SA-4.0
-Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
--->
-# feedback-o-tron Architecture
+== feedback-o-tron Architecture
 
-> **Note**: This document was originally authored for a planned "Observatory" GitHub Intelligence Platform. Much of the component analysis below (Oxigraph, Julia analytics, Nickel config) describes **aspirational/future** capabilities that are not part of the current feedback-o-tron implementation. The current implementation is an autonomous multi-platform bug reporting system. See [README.adoc](../README.adoc) for the actual feature set.
+____
+*Note*: This document was originally authored for a planned
+"`Observatory`" GitHub Intelligence Platform. Much of the component
+analysis below (Oxigraph, Julia analytics, Nickel config) describes
+*aspirational/future* capabilities that are not part of the current
+feedback-o-tron implementation. The current implementation is an
+autonomous multi-platform bug reporting system. See
+link:../README.adoc[README.adoc] for the actual feature set.
+____
 
-## Original Vision (Observatory — Future)
+=== Original Vision (Observatory — Future)
 
-A comprehensive system for tracking, analyzing, and visualizing GitHub activity across repositories — with local-first data sovereignty, semantic querying, and real-time change tracking.
+A comprehensive system for tracking, analyzing, and visualizing GitHub
+activity across repositories — with local-first data sovereignty,
+semantic querying, and real-time change tracking.
 
-## Architecture Overview
+=== Architecture Overview
 
-```
+....
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              User Interfaces                                 │
 ├─────────────────────────────────────────────────────────────────────────────┤
@@ -47,34 +53,31 @@ A comprehensive system for tracking, analyzing, and visualizing GitHub activity 
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  nerdctl + Wolfi OCI  │  Guix channel (primary)  │  Guix flake (fallback)    │
 └─────────────────────────────────────────────────────────────────────────────┘
-```
+....
 
-## Component Decisions
+=== Component Decisions
 
-### 1. Core Engine: Elixir (keep)
+==== 1. Core Engine: Elixir (keep)
 
-**Rationale:**
-- OTP supervision for reliability
-- Native pattern matching suits Datalog
-- Excellent HTTP clients (Req), JSON (Jason)
-- You know it (NeuroPhone)
-- Hot code reload for live updates
+*Rationale:* - OTP supervision for reliability - Native pattern matching
+suits Datalog - Excellent HTTP clients (Req), JSON (Jason) - You know it
+(NeuroPhone) - Hot code reload for live updates
 
-**Alternative considered:** Rust with Tokio — faster, but loses OTP ergonomics and hot reload.
+*Alternative considered:* Rust with Tokio — faster, but loses OTP
+ergonomics and hot reload.
 
-### 2. RDF Store: Oxigraph (instead of Virtuoso)
+==== 2. RDF Store: Oxigraph (instead of Virtuoso)
 
-**Rationale:**
-- Pure Rust, single binary, embeddable
-- Full SPARQL 1.1 support
-- Lighter than Virtuoso (no Java, no complex setup)
-- Fits your Rust preference
-- Can run as subprocess or embedded via NIF
+*Rationale:* - Pure Rust, single binary, embeddable - Full SPARQL 1.1
+support - Lighter than Virtuoso (no Java, no complex setup) - Fits your
+Rust preference - Can run as subprocess or embedded via NIF
 
-**Virtuoso would require:** Java runtime, complex config, more resources.
+*Virtuoso would require:* Java runtime, complex config, more resources.
 
-**Schema:** We map GitHub concepts to RDF:
-```turtle
+*Schema:* We map GitHub concepts to RDF:
+
+[source,turtle]
+----
 @prefix gh: <https://observatory.local/github#> .
 @prefix schema: <https://schema.org/> .
 
@@ -85,61 +88,54 @@ gh:issue/12114 a gh:Issue ;
     gh:label "bug", "memory" ;
     gh:relatedTo gh:issue/10839 ;
     gh:affectsComponent gh:component/session_management .
-```
+----
 
-### 3. Configuration: Nickel
+==== 3. Configuration: Nickel
 
-**Rationale:**
-- Typed configuration language
-- Can output JSON, TOML, Guix, and with adapters: Guix SCM
-- Contracts for validation
-- Merging/inheritance for repo-specific overrides
+*Rationale:* - Typed configuration language - Can output JSON, TOML,
+Guix, and with adapters: Guix SCM - Contracts for validation -
+Merging/inheritance for repo-specific overrides
 
-### 4. Analytics: Julia
+==== 4. Analytics: Julia
 
-**Rationale:**
-- Excellent for statistical analysis
-- DataFrames.jl for tabular data
-- Plots.jl / Makie.jl for visualization
-- Can generate static reports or run as HTTP service
+*Rationale:* - Excellent for statistical analysis - DataFrames.jl for
+tabular data - Plots.jl / Makie.jl for visualization - Can generate
+static reports or run as HTTP service
 
-**Interface:** Elixir calls Julia via:
-- Option A: HTTP (Julia runs as Genie.jl service)
-- Option B: Subprocess with JSON stdin/stdout
-- Option C: Ports with MessagePack (faster)
+*Interface:* Elixir calls Julia via: - Option A: HTTP (Julia runs as
+Genie.jl service) - Option B: Subprocess with JSON stdin/stdout - Option
+C: Ports with MessagePack (faster)
 
-### 5. Frontend: AffineScript-Tea
+==== 5. Frontend: AffineScript-Tea
 
-**Rationale:**
-- Type-safe
-- Elm architecture (TEA) for predictable state
-- Compiles to small JS bundles
-- You specified it
+*Rationale:* - Type-safe - Elm architecture (TEA) for predictable state
+- Compiles to small JS bundles - You specified it
 
-**Alternative considered:** Elm itself — but AffineScript has better JS interop.
+*Alternative considered:* Elm itself — but AffineScript has better JS
+interop.
 
-### 6. Change Tracking: GitHub Webhooks + Polling Hybrid
+==== 6. Change Tracking: GitHub Webhooks + Polling Hybrid
 
-**Mechanism:**
-1. **Webhooks** for repos you control (instant)
-2. **Polling** with ETags for external repos (rate-limit friendly)
-3. **GraphQL subscriptions** where available
+*Mechanism:* 1. *Webhooks* for repos you control (instant) 2. *Polling*
+with ETags for external repos (rate-limit friendly) 3. *GraphQL
+subscriptions* where available
 
 Elixir GenServer manages subscription state, debounces, deduplicates.
 
-### 7. Packaging: nerdctl + Wolfi (primary), Guix channel, Guix fallback
+==== 7. Packaging: nerdctl + Wolfi (primary), Guix channel, Guix fallback
 
-**Why this order:**
-- **Wolfi** is security-focused, minimal, apk-based — good for OCI
-- **nerdctl** is rootless containerd (Podman-like, your preference)
-- **Guix** for reproducible, auditable builds (your preference for provenance)
-- **Guix** as fallback for ecosystems where Guix packages lag
+*Why this order:* - *Wolfi* is security-focused, minimal, apk-based —
+good for OCI - *nerdctl* is rootless containerd (Podman-like, your
+preference) - *Guix* for reproducible, auditable builds (your preference
+for provenance) - *Guix* as fallback for ecosystems where Guix packages
+lag
 
-## Detailed Component Specs
+=== Detailed Component Specs
 
-### Nickel Configuration Schema
+==== Nickel Configuration Schema
 
-```nickel
+[source,nickel]
+----
 # observatory.ncl
 let Config = {
   github : {
@@ -208,11 +204,12 @@ in
     # Generate Guix service definition
     ...,
 }
-```
+----
 
-### Julia Analytics Module
+==== Julia Analytics Module
 
-```julia
+[source,julia]
+----
 # analytics/src/Observatory.jl
 module Observatory
 
@@ -299,11 +296,12 @@ function serve(port::Int=8787)
 end
 
 end # module
-```
+----
 
-### AffineScript-Tea Frontend Structure
+==== AffineScript-Tea Frontend Structure
 
-```affinescript
+[source,affinescript]
+----
 // src/App.res
 module App = {
   type model = {
@@ -385,11 +383,12 @@ module App = {
     </div>
   }
 }
-```
+----
 
-### Multi-Repo Scraper
+==== Multi-Repo Scraper
 
-```elixir
+[source,elixir]
+----
 # lib/gh_manage/scraper.ex
 defmodule GhManage.Scraper do
   @moduledoc """
@@ -595,11 +594,12 @@ defmodule GhManage.Scraper do
     end
   end
 end
-```
+----
 
-### Subscription Manager (Webhooks + Polling)
+==== Subscription Manager (Webhooks + Polling)
 
-```elixir
+[source,elixir]
+----
 # lib/gh_manage/subscriptions.ex
 defmodule GhManage.Subscriptions do
   @moduledoc """
@@ -745,13 +745,14 @@ defmodule GhManage.Subscriptions do
     event_atom in subscribed_events
   end
 end
-```
+----
 
-## Packaging
+=== Packaging
 
-### Wolfi/nerdctl Container
+==== Wolfi/nerdctl Container
 
-```dockerfile
+[source,dockerfile]
+----
 # Dockerfile.wolfi
 FROM cgr.dev/chainguard/wolfi-base
 
@@ -785,11 +786,12 @@ VOLUME ["/app/config", "/app/data"]
 EXPOSE 4000 8080 8787
 
 CMD ["./bin/gh_manage", "start"]
-```
+----
 
-### Guix Channel
+==== Guix Channel
 
-```scheme
+[source,scheme]
+----
 ;; guix/observatory/packages.scm
 (define-module (observatory packages)
   #:use-module (guix packages)
@@ -844,11 +846,12 @@ change tracking.")
                              observatory-shepherd-service)))
    (default-value (observatory-configuration))
    (description "Run the Observatory GitHub intelligence platform.")))
-```
+----
 
-### Guix Flake (Fallback)
+==== Guix Flake (Fallback)
 
-```guix
+[source,guix]
+----
 # flake.guix
 {
   description = "Observatory - GitHub Intelligence Platform";
@@ -925,57 +928,66 @@ change tracking.")
       }
     );
 }
-```
+----
 
-## What's Built vs TODO
+=== What’s Built vs TODO
 
-### ✅ Complete (this session)
+==== ✅ Complete (this session)
 
-| Component | Status |
-|-----------|--------|
-| Elixir MCP Server | Core structure, tool definitions |
-| Elixir GitHub Client | Full CRUD for issues, PRs, branches, releases |
-| Elixir Datalog Store | ETS-backed with indexing |
-| Elixir Datalog Evaluator | Bottom-up with unification |
-| Elixir Datalog Rules | Relationship, pattern, component rules |
-| Elixir Analysis Module | Ingestion, similarity, all analysis types |
-| Elixir Scraper | Multi-repo with rate limiting |
-| Elixir Subscriptions | Webhook + polling hybrid |
-| Architecture Document | This file |
+[cols=",",options="header",]
+|===
+|Component |Status
+|Elixir MCP Server |Core structure, tool definitions
+|Elixir GitHub Client |Full CRUD for issues, PRs, branches, releases
+|Elixir Datalog Store |ETS-backed with indexing
+|Elixir Datalog Evaluator |Bottom-up with unification
+|Elixir Datalog Rules |Relationship, pattern, component rules
+|Elixir Analysis Module |Ingestion, similarity, all analysis types
+|Elixir Scraper |Multi-repo with rate limiting
+|Elixir Subscriptions |Webhook + polling hybrid
+|Architecture Document |This file
+|===
 
-### 🔧 TODO (implementation needed)
+==== 🔧 TODO (implementation needed)
 
-| Component | Effort | Notes |
-|-----------|--------|-------|
-| Nickel config schema | 2h | Write full schema with outputs |
-| Oxigraph integration | 4h | NIF or HTTP bridge to Rust binary |
-| Julia analytics module | 3h | Implement Observatory.jl |
-| AffineScript-Tea frontend | 8h | Full UI with charts |
-| Elixir HTTP API | 2h | Bandit + REST endpoints |
-| Container build | 2h | Wolfi Dockerfile |
-| Guix channel | 3h | Package definitions |
-| Guix flake | 2h | Module + overlay |
-| Ada integration | 4h | Keep for SPARK-verified core types if desired |
+[cols=",,",options="header",]
+|===
+|Component |Effort |Notes
+|Nickel config schema |2h |Write full schema with outputs
+|Oxigraph integration |4h |NIF or HTTP bridge to Rust binary
+|Julia analytics module |3h |Implement Observatory.jl
+|AffineScript-Tea frontend |8h |Full UI with charts
+|Elixir HTTP API |2h |Bandit + REST endpoints
+|Container build |2h |Wolfi Dockerfile
+|Guix channel |3h |Package definitions
+|Guix flake |2h |Module + overlay
+|Ada integration |4h |Keep for SPARK-verified core types if desired
+|===
 
-### 🤔 Open Design Questions
+==== 🤔 Open Design Questions
 
-1. **Oxigraph vs in-memory Datalog**: Do you want full RDF/SPARQL, or is the Elixir Datalog sufficient? Oxigraph adds complexity but enables standard semantic web tooling.
+[arabic]
+. *Oxigraph vs in-memory Datalog*: Do you want full RDF/SPARQL, or is
+the Elixir Datalog sufficient? Oxigraph adds complexity but enables
+standard semantic web tooling.
+. *Julia integration method*: HTTP service (always running) or
+subprocess (on-demand)? HTTP is faster for repeated queries but uses
+more resources.
+. *Ada role*: Keep Ada for SPARK-verified types that Elixir calls via
+ports? Or consolidate everything in Elixir?
+. *GitLab support*: You prefer GitLab — should we abstract the VCS layer
+to support both GitHub and GitLab APIs?
+. *Local-first vs cloud*: Should the frontend be a local Tauri app, or a
+web service?
 
-2. **Julia integration method**: HTTP service (always running) or subprocess (on-demand)? HTTP is faster for repeated queries but uses more resources.
+=== Recommended Next Steps
 
-3. **Ada role**: Keep Ada for SPARK-verified types that Elixir calls via ports? Or consolidate everything in Elixir?
-
-4. **GitLab support**: You prefer GitLab — should we abstract the VCS layer to support both GitHub and GitLab APIs?
-
-5. **Local-first vs cloud**: Should the frontend be a local Tauri app, or a web service?
-
-## Recommended Next Steps
-
-1. **Finish Elixir core** - Add HTTP API, test MCP integration
-2. **Nickel config** - Define schema, test outputs
-3. **Julia analytics** - Implement contribution stats
-4. **Container** - Build Wolfi image, test locally
-5. **Frontend** - Scaffold AffineScript-Tea, connect to API
-6. **Guix/Guix** - Package for reproducible deployment
+[arabic]
+. *Finish Elixir core* - Add HTTP API, test MCP integration
+. *Nickel config* - Define schema, test outputs
+. *Julia analytics* - Implement contribution stats
+. *Container* - Build Wolfi image, test locally
+. *Frontend* - Scaffold AffineScript-Tea, connect to API
+. *Guix/Guix* - Package for reproducible deployment
 
 Want me to continue with any specific component?

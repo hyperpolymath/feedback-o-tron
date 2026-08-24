@@ -1,15 +1,8 @@
-<!--
-SPDX-License-Identifier: CC-BY-SA-4.0
-Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
--->
-<!-- TOPOLOGY.md — Project architecture map and completion dashboard -->
-<!-- Last updated: 2026-07-09 -->
+== feedback-o-tron — Project Topology
 
-# feedback-o-tron — Project Topology
+=== System Architecture
 
-## System Architecture
-
-```
+....
                         ┌─────────────────────────────────────────┐
                         │              AI AGENTS / USERS          │
                         │        (Claude, Gemini, ChatGPT)        │
@@ -79,11 +72,11 @@ Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
                         │  │ Codeberg  │  │ Bitbucket │  │ Email ││
                         │  └───────────┘  └───────────┘  └───────┘│
                         └─────────────────────────────────────────┘
-```
+....
 
-## Completion Dashboard
+=== Completion Dashboard
 
-```
+....
 COMPONENT                          STATUS              NOTES
 ─────────────────────────────────  ──────────────────  ─────────────────────────────────
 INTERFACE LAYER
@@ -128,11 +121,11 @@ REPO INFRASTRUCTURE
 ─────────────────────────────────────────────────────────────────────────────
 OVERALL:                            ████████░░ ~75%    Core validated; synthesis new;
                                                        FFI enforcement not built
-```
+....
 
-## Key Dependencies
+=== Key Dependencies
 
-```
+....
 Idris2 contract spec ──(mirrored by)──► Elixir FormValidator
         │                                      │
         └──(Zig FFI bridge: STUB, ──► planned enforcement path)
@@ -146,19 +139,20 @@ Idris2 contract spec ──(mirrored by)──► Elixir FormValidator
               └──────────┴────────────┬──────────────┴──────────┘
                                       ▼
                                 EXTERNAL APIs
-```
+....
 
-## Update Protocol
+=== Update Protocol
 
 This file is maintained by both humans and AI agents. When updating:
 
-1. **After completing a component**: Change its bar and percentage
-2. **After adding a component**: Add a new row in the appropriate section
-3. **After architectural changes**: Update the ASCII diagram
-4. **Date**: Update the `Last updated` comment at the top of this file
-5. **Honesty rule**: a bar only reaches 100% when the code exists, is wired
-   in, and does what the row says. "Aspirational" boxes get a low bar and a
-   note — never a full bar. No universal "100% Production Ready" rows.
+[arabic]
+. *After completing a component*: Change its bar and percentage
+. *After adding a component*: Add a new row in the appropriate section
+. *After architectural changes*: Update the ASCII diagram
+. *Date*: Update the `+Last updated+` comment at the top of this file
+. *Honesty rule*: a bar only reaches 100% when the code exists, is wired
+in, and does what the row says. "`Aspirational`" boxes get a low bar and
+a note — never a full bar. No universal "`100% Production Ready`" rows.
 
-Progress bars use: `█` (filled) and `░` (empty), 10 characters wide.
-Percentages: 0%, 10%, 20%, ... 100% (in 10% increments).
+Progress bars use: `+█+` (filled) and `+░+` (empty), 10 characters wide.
+Percentages: 0%, 10%, 20%, … 100% (in 10% increments).

@@ -1,122 +1,109 @@
-// SPDX-License-Identifier: CC-BY-SA-4.0
-// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
-= Contributing to feedback-o-tron
-:toc:
+== Clone the repository
 
-Thank you for your interest in contributing to feedback-o-tron!
+git clone https://github.com/hyperpolymath/feedback-o-tron.git cd
+feedback-o-tron
 
-== Language Policy
+== Using Guix (recommended for reproducibility)
 
-This project follows the **Hyperpolymath RSR 2026** language standard. Before contributing, review the allowed and banned languages in `CLAUDE.md`.
-
-**Allowed:**
-
-* **Elixir** — primary application code (all `elixir-mcp/` modules)
-* **Zig** — FFI bridge (`ffi/zig/`)
-* **Rust** — performance-critical components
-* **Bash/POSIX Shell** — scripts and automation
-* **Julia** — statistics (`julia-stats/`)
-
-**Banned:** TypeScript, Node.js, npm, Python, Go, Java, Kotlin, Swift. See `CLAUDE.md` for the full list and rationale.
-
-== Getting Started
-
-=== Prerequisites
-
-* Elixir >= 1.15 with OTP >= 26
-* Zig (for FFI development)
-* Guix or Guix (optional, for reproducible environments)
-
-=== Setup
-
-[source,bash]
-----
-# Using Guix flake
 guix develop
 
-# Or manually
-cd elixir-mcp
-mix deps.get
-mix compile
-----
+== Or using toolbox/distrobox
 
-=== Running Tests
+toolbox create feedback-o-tron-dev toolbox enter feedback-o-tron-dev #
+Install dependencies manually
 
-[source,bash]
-----
-cd elixir-mcp
-mix test          # Run all tests
-mix test --trace  # With verbose output
-----
+== Verify setup
 
-== Development Guidelines
+just check # or: cargo check / mix compile / etc. just test # Run test
+suite
 
-=== Code Style
+....
 
-* Run `mix format` before committing — CI enforces formatting
-* Follow existing patterns in the codebase
-* All channel adapters must implement the `FeedbackATron.Channel` behaviour
-* All transports must be encrypted (HTTPS, NNTPS, SMTPS, Matrix)
+### Repository Structure
+....
 
-=== Security Requirements
+feedback-o-tron/ ├── src/ # Source code (Perimeter 1-2) ├── lib/ #
+Library code (Perimeter 1-2) ├── extensions/ # Extensions (Perimeter 2)
+├── plugins/ # Plugins (Perimeter 2) ├── tools/ # Tooling (Perimeter 2)
+├── docs/ # Documentation (Perimeter 3) │ ├── architecture/ # ADRs,
+specs (Perimeter 2) │ └── proposals/ # RFCs (Perimeter 3) ├── examples/
+# Examples (Perimeter 3) ├── spec/ # Spec tests (Perimeter 3) ├── tests/
+# Test suite (Perimeter 2-3) ├── .well-known/ # Protocol files
+(Perimeter 1-3) ├── .github/ # GitHub config (Perimeter 1) │ ├──
+ISSUE_TEMPLATE/ │ └── workflows/ ├── CHANGELOG.md ├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md # This file ├── GOVERNANCE.md ├── LICENSE ├──
+MAINTAINERS.md ├── README.adoc ├── SECURITY.md ├── flake.guix # Guix
+flake (Perimeter 1) └── Justfile # Task runner (Perimeter 1)
 
-* No MD5 or SHA1 for security purposes (use SHA-256+)
-* HTTPS only — no plaintext HTTP URLs
-* No hardcoded secrets or credentials
-* All dependencies must be SHA-pinned
-* SPDX license headers on all source files
+....
 
-=== Error Handling
+---
 
-Use the structured error types in `FeedbackATron.Error`:
+## How to Contribute
 
-* `AuthenticationError` — credential failures
-* `RateLimitError` — platform rate limits
-* `NetworkError` — connectivity issues
-* `ValidationError` — bad input
-* `PlatformError` — unexpected API responses
+### Reporting Bugs
 
-=== Adding a New Channel
+**Before reporting**:
+1. Search existing issues
+2. Check if it's already fixed in `main`
+3. Determine which perimeter the bug affects
 
-1. Create `lib/feedback_a_tron/channels/your_platform.ex`
-2. Implement `@behaviour FeedbackATron.Channel`
-3. Add the platform to `Channel.registry/0`
-4. Add credential loading to `Credentials`
-5. Add rate limit config to `RateLimiter`
-6. Add tests in `test/`
-7. Update the CLI help text
+**When reporting**:
 
-=== Commit Messages
+Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
 
-* Use present tense: "Add feature" not "Added feature"
-* Keep the first line under 72 characters
-* Reference issues where applicable
+- Clear, descriptive title
+- Environment details (OS, versions, toolchain)
+- Steps to reproduce
+- Expected vs actual behaviour
+- Logs, screenshots, or minimal reproduction
 
-== Architecture
+### Suggesting Features
 
-See `TOPOLOGY.md` for the full architecture diagram.
+**Before suggesting**:
+1. Check the [roadmap](ROADMAP.md) if available
+2. Search existing issues and discussions
+3. Consider which perimeter the feature belongs to
 
-Key modules:
+**When suggesting**:
 
-* `Submitter` — orchestrates multi-platform submission with retry and rate limiting
-* `Channel` — behaviour and registry for platform adapters
-* `Deduplicator` — fuzzy matching to prevent duplicate filings
-* `RateLimiter` — per-platform token bucket rate limiting
-* `Retry` — exponential backoff for transient failures
-* `AuditLog` — JSON-lines audit trail
-* `NetworkVerifier` — pre/post-submission network safety checks
-* `Credentials` — multi-source credential loading with rotation
+Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md) and include:
 
-== Licensing
+- Problem statement (what pain point does this solve?)
+- Proposed solution
+- Alternatives considered
+- Which perimeter this affects
 
-All contributions must be licensed under MPL-2.0.
-Add the SPDX header to all new files:
+### Your First Contribution
 
-[source,elixir]
-----
-# SPDX-License-Identifier: CC-BY-SA-4.0
-----
+Look for issues labelled:
 
-== Reporting Issues
+- [`good first issue`](https://github.com/hyperpolymath/feedback-o-tron/labels/good%20first%20issue) — Simple Perimeter 3 tasks
+- [`help wanted`](https://github.com/hyperpolymath/feedback-o-tron/labels/help%20wanted) — Community help needed
+- [`documentation`](https://github.com/hyperpolymath/feedback-o-tron/labels/documentation) — Docs improvements
+- [`perimeter-3`](https://github.com/hyperpolymath/feedback-o-tron/labels/perimeter-3) — Community sandbox scope
 
-Use feedback-o-tron itself to report issues! Or open an issue on the GitHub repository.
+---
+
+## Development Workflow
+
+### Branch Naming
+....
+
+docs/short-description # Documentation (P3) test/what-added # Test
+additions (P3) feat/short-description # New features (P2)
+fix/issue-number-description # Bug fixes (P2) refactor/what-changed #
+Code improvements (P2) security/what-fixed # Security fixes (P1-2)
+
+....
+
+### Commit Messages
+
+We follow [Conventional Commits](https://www.conventionalcommits.org/):
+....
+
+():
+
+{empty}[optional body]
+
+{empty}[optional footer]
