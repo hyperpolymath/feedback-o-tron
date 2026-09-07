@@ -1,0 +1,472 @@
+// SPDX-License-Identifier: MPL-2.0
+= FoT Everywhere — design draft
+:toc: left
+:sectnums:
+:revdate: 2026-09-07
+:status: DRAFT — for owner approval; nothing here is implemented or committed
+
+[NOTE]
+====
+*Status:* draft produced 2026-09-07 for review. It is not committed. It answers
+the owner's brief of the same day: make feedback-o-tron ("FoT") the best
+feedback tool on the internet, installable by any AI with one sentence,
+nested from the absolute minimum to the absolute maximum, usable anywhere
+(not only through boj-server), with the safeguards already built kept intact.
+Section 2 records what exists today so the design builds on it rather than
+replacing it. Section 15 lists the decisions the owner still has to make.
+====
+
+== The brief, traced
+
+Each requirement has an id so later sections can cite it.
+
+[cols="1,6",options="header"]
+|===
+| Id | Requirement (owner's words, 2026-09-07, condensed)
+| R1 | "install hyperpolymath's FoT please" — any AI can say it, and FoT is wired in (via BoJ where BoJ exists) with a proper command line, a TUI and host integrations (Antigravity, VS Code, a game, whatever is going on).
+| R2 | Nested extensions: the absolute minimum through the absolute maximum, chosen by the user or host.
+| R3 | Not limited to boj-server; passable around anywhere — but with the safeguards already built in.
+| R4 | Always useful, always helpful: never a way to fling abuse around or fill inboxes with the unworkable. Consider Reddit and customer forums, and the people on the receiving side.
+| R5 | Sender and recipient may be a programming genius or a first-time user, a corporation or a natural person, an agent or a person, a child or an adult.
+| R6 | Privacy: never send what the user does not want sent (build number, MAC, IP, or whatever they prefer), even when it would be useful; offer whatever is possible within the user's willingness; transparent at every point without over-warning; personalised per user, organisation or service.
+| R7 | Do not stop people sending two. Stop abuse in volume.
+| R8 | Priority honest in both directions: no "urgent" for the trivial, no "standard" for life or death.
+| R9 | Decide what model, what effort, and what advisor the tool uses.
+| R10 | Build on what was working and established; find what never made it into practice; bring it up to date with the latest standards and rsr-template.
+|===
+
+== What exists, what was established, what never reached practice
+
+_Measured 2026-09-07 on origin/main (commit 515ee45, 259 commits, history
+intact; last engine commit 73ba800 on 2026-07-17). Tests: 272 pass on
+Elixir 1.19 / OTP 27._
+
+=== Established and worth keeping
+
+* The engine under `elixir-mcp/lib/feedback_a_tron/synthesis/`: template
+  fetcher and cache, intent classifier, hydrator, research, synthesizer, form
+  validator and renderer — all real, none stubbed, all tested. Plus a
+  deduplicator with text similarity, a supervised rate limiter, a hostility
+  filter (`IntentClassifier`: rejects zero-signal abuse, salvages the
+  actionable core of mixed text), fourteen channel adapters (GitHub, GitLab,
+  Bitbucket, Codeberg, Sourcehut, Bugzilla, Jira, Discourse, Reddit, Discord,
+  Matrix, email, Mailman, NNTP) and a submitter with an audit log. Reddit and
+  Discourse already exist, so the forum destinations in R4 are a wiring
+  question, not a build. This is the core and it stays the core.
+* A GenStage migration-observation pipeline (producer → review consumer →
+  VeriSim writer) with a batch reviewer and report generator, built for the
+  ReScript migration. Real and tested, narrow in purpose, and the natural
+  seed for burst clustering at L5.
+* The MCP server (`mcp/server.ex`, stdio by default, optional loopback TCP)
+  exposing three tools: research, synthesize, submit.
+* The HTTP intake (`http_intake/router.ex`, 127.0.0.1:7722, off by default)
+  with health, submit, research and synthesize routes.
+* The Idris2 contract `src/abi/FeedbackOTron/Contract.idr` (total, no holes)
+  as the specification of the form validator.
+* The foundry's capability-partition vocabulary in boj-server-cartridges
+  (granted capabilities, "inertness"), the right words for what an FoT
+  extension may touch.
+* The autonomous-bug-pipeline design (C1–C4) with its provenance discipline;
+  C1 and C2 are backed by code and tests, C3 half (the contract exists but
+  nothing checks the Elixir against it), C4 honestly marked partial.
+
+=== Never reached practice
+
+* *No model.* "Synthesis" is keyword and regex classification, YAML template
+  parsing and shelling out to `gh`. No language-model call exists anywhere,
+  no provider abstraction, nothing pluggable. The intelligence the product
+  story assumes was never built. (This is the largest gap.)
+* *No install.* `setup.sh` installs `just` and stops. The Justfile has no
+  `mix`, `elixir` or `escript` recipe; `mise.toml`, `guix.scm` and
+  `stapeln.toml` were copied from a template and declare Node, Python,
+  Rust, Go, Zig, Java, Bun, Deno and Julia — never Elixir or Erlang. The
+  `Mustfile` calls a `just test` recipe that does not exist. The only
+  runnable artefact is a 3 MB prebuilt escript committed to the tree.
+* *CLI is a stub.* Only `submit` is implemented; the CLI cannot research or
+  synthesize. Help text says `feedback-o-tron`, the build says
+  `feedback-a-tron`.
+* *No TUI.* The `owl` dependency is declared and never used.
+* *No door other than boj.* The `bug-filing-mcp` cartridge lives in
+  boj-server-cartridges; this repo has the wire, not the wrapper. No editor
+  extension, no native SDK.
+* *No privacy, consent or priority code.* No redaction or PII module; no
+  consent or transparency module; severity is a pass-through field. The
+  owner's safeguards exist as the rate limiter, the deduplicator, the
+  hostility filter and the contract — real, but a third of the set.
+* *Proofs and FFI unwired.* No NIF or port; `ffi/zig/src/main.zig` refers to
+  `src/abi/Foreign.idr` and `Types.idr`, which do not exist. The contract's
+  guarantees are mirrored by hand in Elixir, unverified.
+* *Docs ahead of code.* README lists a standalone CLI among four senders
+  (it cannot synthesize); says tokens are never stored in files while
+  `credentials/file_store.ex` reads netrc and TOML; cites 2026-02-07 "real
+  Bugzilla submissions" with no artefact; `mix docs` points at Markdown files
+  that no longer exist; `migration_observe` is an unregistered MCP tool.
+* Forge-side clustering, the org-level template fallback, OCI/SWR/OTel
+  (boj #275/#276/#277).
+
+=== Standards and rsr drift (for R10)
+
+* All five reusable-workflow pins on main point at `7fdc2705`, which is not
+  an ancestor of standards main (`fad242d3`): governance, hypatia-scan,
+  mirror, scorecard, secret-scanner all die at startup. PR #86 fixes
+  governance only; PR #85 fixes all five to a non-head sha whose
+  secret-scanner revision has a `--fail`-repeated bug (not a leak).
+* `secret-scanner.yml` also uses an unpinned `actions/checkout@v7`, which the
+  estate's sha-pinning rule rejects at startup.
+* CI's Elixir matrix (1.15–1.17) cannot see a dead branch that Elixir 1.19's
+  type inference reports in `mcp/tools/research_feedback.ex:84`.
+* Absent rsr-template files: `CITATION.cff`, `.gitmessage`, `.mailmap`,
+  `.envrc`, `.tool-versions`, `sonar-project.properties`. Materially
+  different: `0-AI-MANIFEST.a2ml`, `Justfile`, `mise.toml`, `.editorconfig`,
+  `.gitattributes`, `guix.scm`, dependabot, CODEOWNERS, FUNDING.
+* Remnants: Deno in `examples/web-project-deno.json` and `mise.toml`; a
+  `rescript.lock`; literal Nix in `elixir-mcp/ARCHITECTURE.adoc:851-902`.
+  The one Markdown file, `.claude/CLAUDE.md`, is tool-mandated (Claude Code
+  loads it by that name and standards' `check-ts-allowlist.sh` reads it for
+  exemptions) and is not drift.
+* Case-duplicate paths that collide on Windows and macOS: `licenses/` and
+  `LICENSES/`, `.github/funding.yml` and `FUNDING.yml`, `MAINTAINERS` and
+  `MAINTAINERS.adoc`. (The local clone's uncommitted deletion of
+  `FUNDING.yml` is that dedupe, half-landed.)
+
+=== Why it went backwards
+
+Nothing was deleted: no commit since 2026-07-09 removes or stubs code. It
+went backwards in *usability*, for five reasons.
+
+. *The runtime policy moved under the docs.* The documented start path was
+  Deno/npm (`npx @hyperpolymath/boj-server`). Deno and TypeScript were then
+  eradicated estate-wide (boj #314, cartridges #126), so every recorded
+  recipe stopped working, and nothing replaced them as a shipped artefact.
+. *Nothing ever shipped.* FoT is source plus two daemons that nobody starts,
+  with template manifests that do not know it is an Elixir project. A tool
+  with no artefact is only "installed" on the machine where someone last
+  ran `mix`, and today that is no machine: 7700 and 7722 are both down.
+. *CI went red and stayed red.* Five dead pins plus an unpinned tag kill
+  every run at startup with no jobs; the two repair PRs each fix part.
+  Nothing merges, so nothing lands, and the engine has not been touched
+  since 17 July.
+. *Work happened in throwaway clones.* The June IDE session minted two
+  cartridges in a non-canonical clone and never committed; the clone was
+  removed in September. The canonical clone sat on a stale branch (four
+  unpushed pin-bump commits from 13–14 August, 17 commits behind main) and
+  then took blanking-sweep damage. Note: a shallow fetch made that branch
+  look 246 commits adrift with no merge base, and made a first stocktake
+  conclude the history had been erased; both figures above are measured
+  after deepening the fetch.
+. *The docs say BUILT.* "LARGELY BUILT" is true of modules and false of the
+  product: there is no model, no install and no CLI beyond submit, and the
+  proof that matters — a stranger installs it and files one useful report —
+  has never been run.
+
+== Principles
+
+P1:: *The minimum is real.* Tier 0 must work with no model, no account and no
+network beyond the destination itself, and must queue offline.
+P2:: *The host is the model.* When FoT runs inside an AI host (Antigravity,
+Claude Code, VS Code, Cursor, Zed, an agent framework), it borrows the host's
+model through MCP sampling where the host declares the `sampling` capability
+at initialize, and then needs no API key of its own. Not every host does;
+`fot doctor` reports what the host declared, and a configured provider is
+the working default until the host supports sampling. Own keys are the
+fallback, not the rule. (R1, R3)
+P3:: *Ledger before wire.* Nothing leaves the machine until the privacy ledger
+for that report has been shown once and acknowledged; after that, the user's
+standing preferences make it quiet. (R6)
+P4:: *The recipient must be able to act.* A report that fails the
+actionability predicate is returned to the sender with the one thing missing,
+never sent "anyway". (R4)
+P5:: *Priority is evidence, declared priority is a claim.* Both are recorded;
+disagreement is resolved with one plain question; the safety path is never
+downgraded and never batched. (R8)
+P6:: *Two is fine, two hundred is a queue.* Volume is governed per sender and
+destination; bursts are clustered, not dropped. (R7)
+P7:: *One identity, many doors.* The engine, the contract and the policy are
+one thing; CLI, TUI, MCP, HTTP, C ABI and BoJ are doors onto it. (R1, R3)
+P8:: *Explain once, in the reader's register.* Transparency is a single clear
+sentence at the moment it matters, in language chosen for the persona, not a
+wall of warnings. (R5, R6)
+
+== Architecture
+
+[source]
+----
+                 ┌──────────────── doors ────────────────┐
+  fot CLI ─┐     │ MCP server (stdio + streamable HTTP)  │
+  fot tui ─┤     │ HTTP intake (127.0.0.1:7722)          │
+  BoJ cart ┤ ──▶ │ C ABI (Zig) for games / native apps   │ ──▶ CORE
+  editors  ┤     │ Gemini extension / VS Code / Zed …    │
+  agents  ─┘     └───────────────────────────────────────┘
+                                                            CORE = engine + contract + policy
+  ┌──────── extensions (ladder L0–L5) ────────┐            policy = ledger · calibrator ·
+  │ note · form · shape · evidence ·          │                     governor · personas
+  │ advocate · fleet                          │            advisor = pre-send reviewer
+  └───────────────────────────────────────────┘
+                                                            ▼
+  destinations: GitHub / GitLab / Codeberg issues & discussions · email · Discourse ·
+  Zendesk / Freshdesk / HubSpot forms · schema-described web forms ·
+  portable report file (when no channel is known)
+----
+
+Components:
+
+Core:: The existing Elixir engine, the Idris2 contract, and the policy
+modules (new). Runs as *one* OS process (`fot serve`) that hosts the intake,
+the MCP transport and the engine — the 7700/7722 two-daemon dance ends.
+Doors:: Thin adapters. Each door is < 300 lines and owns no policy.
+Extensions:: The ladder. Each level is a plugin with a manifest that declares
+its granted capabilities in the foundry's vocabulary (Net, Fs, Clipboard,
+Screen, Logs, Model) so a host or an organisation can cap the ceiling.
+Destinations:: Adapters that know a channel's schema and its floor (what it
+*requires*, e.g. GitHub issue forms' required fields, a vendor's form fields).
+Policy:: Privacy ledger, priority calibrator, volume governor, persona
+profiles. Policy is data (a signed profile per user, organisation or
+service) interpreted by one engine; there is no per-door policy code.
+Advisor:: A separate review pass with the full draft, ledger and evidence,
+answering five fixed questions before anything is sent (section 12).
+
+== The ladder: nested extensions L0–L5
+
+Each level is a strict superset of the one below; a host chooses the ceiling,
+a user chooses per send, and the ledger shows which level a report used.
+
+[cols="1,2,4,3,2",options="header"]
+|===
+| Level | Name | Adds | Needs | Typical user
+| L0 | Note | Free text + a target; queued offline; portable report file if no channel is known. | Nothing. No model, no account. | A child, a first-time user, an air-gapped machine.
+| L1 | Form | Fetches the destination's schema (issue forms, support form) and fills the required fields; validates against the contract. | Network to the destination only. | Anyone who has ever been bounced by "please use the template".
+| L2 | Shape | Intent classification, synthesis into the destination's register, deduplication, two-way priority calibration. | A model (host-sampled or configured). | Most humans and agents.
+| L3 | Evidence | Consented capture: logs up to this point, tool reports, config, screenshots, reproduction steps — each through the ledger and redaction with a diff before send. | Model + granted Logs/Fs/Screen capabilities. | Developers, testers, agents reporting on their own runs.
+| L4 | Advocate | Research first: is it known, fixed, worked around, discussed on the forum or Reddit? Suggest the answer before filing; cross-link; draft the recipient-side view. | Model + Net (read). | Support teams, maintainers, careful reporters.
+| L5 | Fleet | Organisation and agent scale: budgets, clustering of bursts into one report with N attestations, multi-destination routing, receipts and tracking, audit trail. | Org profile + storage. | Corporations, agent fleets, the autonomous pipeline.
+|===
+
+The child's example lives at L0/L1: "I love airborne submarine squadron but
+can you have different colours or let me scan in my own drawing" becomes a
+feature request in the game's channel with the drawing attached, no free-text
+personal data, and a confirmation in the child's register. The developer's
+example lives at L3: logs to this point, tool reports and config, with the
+build number, MAC and IP redacted because that user's standing ledger says so.
+
+== Personas and personalisation (R5, R6)
+
+A *profile* is a small signed document, one each for the user, the
+organisation and the service, layered in that order (service floor, org
+policy, user preference; the most restrictive privacy setting wins, the most
+permissive is never inherited upward).
+
+Child:: Pictures and drawing upload; no free-text personal data collected;
+guardian contact as the sender of record where the destination needs one;
+playful, short confirmations; L0–L1 only unless a guardian raises the ceiling.
+Novice:: Plain-language prompts, one question at a time, the ledger shown
+as "here is exactly what will be sent", a preview in the destination's look.
+Expert:: Raw structured input and output, batch mode, ledger as a diff,
+keyboard-only TUI.
+Corporation:: Org profile sets the floor and the budget; audit trail;
+receipts; approval step optional; SSO deferred (section 14).
+Agent:: Structured API with idempotency keys, machine-readable ledger and
+receipts, explicit `declared_priority` and `evidence` fields, hard budget.
+Recipient side:: Every destination adapter can express a *throttle* and a
+*preferred shape* (for example "one issue per cluster, reproduction required,
+no screenshots of PII"); FoT honours it and tells the sender why.
+
+Register (reading level, tone, language) is chosen from the profile and can
+be overridden per send. The same fact is never explained twice in a session
+unless the user asks.
+
+== Privacy ledger (R6)
+
+Every datum FoT considers attaching is a *ledger row*:
+`{class, source, value-summary, default, decision, reason}`.
+
+Classes:: identity (name, email, handles), device (build number, serials,
+hardware ids), network (IP, MAC, hostnames), environment (OS, versions,
+paths, usernames inside paths), logs, configuration, media (screens,
+drawings), free text.
+Defaults:: per class: `send`, `redact`, `ask`, `never`. The owner's own
+standing rule — never build number, MAC or IP — is a user profile line, not a
+special case.
+Redaction:: deterministic first (structured scrubbers for IP/MAC/serial/
+token/email/path-username patterns), then model-assisted only for free text
+and logs, always producing a diff the user can see. Model-assisted redaction
+never *adds* data.
+Transparency:: the ledger is shown in full once per destination and per
+level; afterwards a one-line summary ("sending 3 items, 2 redacted, nothing
+from the *never* list") unless something new appears. Exactly what was sent
+is stored locally and exportable.
+Floor conflicts:: if a destination *requires* a class the profile marks
+`never` (a vendor form that demands a serial), FoT says so in one sentence
+and offers the portable-report route instead. It never sends it quietly.
+
+== Priority calibrator (R8)
+
+Severity ladder with evidence predicates:
+
+[cols="1,3,5",options="header"]
+|===
+| S | Meaning | Evidence that establishes it
+| S0 | Safety of life, health, or a child; active exploitation | Any credible statement of harm; never requires reproduction.
+| S1 | Data loss, security vulnerability, privacy breach | Repro or artefact showing loss/exposure.
+| S2 | Blocked: cannot complete a core task, no workaround | Repro + failed workaround attempt.
+| S3 | Degraded: works with a workaround | Repro + workaround.
+| S4 | Cosmetic / minor | Observation.
+| S5 | Wish / idea / praise | None.
+|===
+
+Rules:
+
+* Both `declared` and `derived` are recorded on the report.
+* Mismatch of one step is accepted silently in the sender's favour.
+  Mismatch of two or more steps gets *one* question in the sender's register
+  ("this reads as S3 — was anyone hurt or blocked?"); the answer is final.
+* S0 is a fast path: it bypasses batching, clustering and budgets, goes to the
+  destination's safety or security channel where one is known, notifies a
+  human where the profile names one, and is never downgraded by any model.
+* Persistent over-declaration by one sender lowers that sender's *auto-accept
+  band* gently (the question appears sooner); it never blocks sending. (R7)
+
+== Volume governor and anti-abuse (R4, R7)
+
+* Token bucket per (sender, destination) and a daily budget per profile;
+  defaults let a human send a handful an hour without ever meeting a limit.
+* A burst is *clustered*: one report, N attestations, the sender told what
+  happened. Nothing is silently dropped.
+* Deduplication (existing) extends across destinations so the same defect is
+  not filed to a forge and a support desk twice unless the sender asks.
+* Tone: FoT proposes a rewrite for hostile text and asks; it never changes
+  meaning silently and never sends content that targets a named individual.
+* Recipient throttle signals (section 7) are honoured and explained.
+* Agents get hard budgets and idempotency; a fleet must present an org
+  profile to exceed the human defaults.
+
+== Usefulness gate (R4)
+
+Actionability predicate, added to the Idris2 contract:
+
+* has an ask (a change, a question, a defect) that a reader can act on;
+* has the environment at the level the destination's floor requires;
+* is not a known duplicate (existing dedup) and, at L4, has been checked
+  against the destination's own docs, changelog and forum — with the answer
+  offered *before* filing when one exists;
+* carries the priority pair from section 9;
+* passes the ledger.
+
+A report failing the predicate is returned with the single missing item
+named in the sender's register. "Send anyway" exists only at L0 (a note),
+because at L0 the recipient has agreed to receive notes.
+
+== Model, effort and advisor (R9)
+
+Provider order: *host sampling* (the AI host lends its model over MCP) →
+*configured provider* → *none* (L0–L1 are fully deterministic). Host
+sampling is detected, never assumed: the MCP initialize handshake carries the
+client's capabilities, and FoT uses sampling only when the client declares
+it. A host that does not declare it falls through to the configured provider,
+and `fot doctor --host` says which of the two it found.
+
+[cols="2,3,2,3",options="header"]
+|===
+| Stage | Default model when FoT runs its own | Effort | Notes
+| Classification, redaction assist, register detection | Haiku 4.5 (`claude-haiku-4-5-20251001`) | low | Cheap, fast, runs on every send; deterministic scrubbers run first.
+| Synthesis, hydration, recipient-side draft | Sonnet 5 (`claude-sonnet-5`) | medium | Escalate to high when derived severity ≤ S1 or level ≥ L4.
+| Research (L4) | Sonnet 5 | medium | Read-only Net capability; sources cited in the report.
+| Advisor (pre-send review) | Opus 5 (`claude-opus-5`); Fable 5.1 where available | high | Sees the full draft, ledger, evidence and profile. Mandatory for S0/S1, L4+, and org profiles; optional (user preference) at L2–L3; absent at L0–L1.
+| Local / private tier | Ollama or any OpenAI-compatible local endpoint | as configured | For profiles that forbid cloud models; L2 quality degrades, ledger and gates do not.
+|===
+
+The advisor answers five fixed questions and may only *return* the report,
+never edit it: Is it useful to the recipient? Is it safe (no harassment, no
+targeting)? Is the priority pair honest? Does the ledger match the payload?
+Is the register right for the recipient? A "no" comes back with the reason
+in one sentence. Where the host lends its model, the advisor runs as a second
+sampling call with a different system prompt; where possible it uses a
+different model family from the synthesiser so the two do not share blind
+spots.
+
+== Install and distribution (R1)
+
+Naming, ruled 2026-09-07: `fot` is not the identity. The product keeps a
+self-describing, whimsical name in the spirit of a machine from a children's
+story, one that encourages people to make things better. `feedback-o-tron`
+is the canonical command and cartridge name; `fot` survives only as a typing
+alias, and `fot` in this document is shorthand for that command. The
+`a-tron` spelling is retired from every user-facing surface (escript name,
+help text, catalogue entry); the internal Elixir namespace `FeedbackATron`
+is renamed in a mechanical follow-up after SP1. A better overall name
+remains open with the owner.
+
+"Install hyperpolymath's FoT please" resolves, in order:
+
+. *Through BoJ where BoJ is present:* `boj install feedback-o-tron` (the
+  `bug-filing-mcp` cartridge is renamed `feedback-o-tron`, old name kept as
+  an alias) pulls the release artefact and writes the host stanza.
+. *Directly:* one release artefact per platform — an OTP release wrapped as a
+  single executable — published on GitHub Releases and ghcr (the Elixir
+  image, not the bridge; boj #272), with `mise` and Guix (`guix.scm` exists)
+  as package routes. No Deno, no npm, no `curl | sh`.
+. *Host wiring:* `fot doctor --host antigravity|vscode|claude-code|cursor|zed|gemini-cli`
+  writes the MCP stanza for that host and verifies the handshake. Antigravity
+  gets `wsl -e` handling on Windows; the Gemini catalogue entry is the existing
+  `gemini-extension.json` bumped and submitted.
+. *Games and native apps:* a C header and static library from the Zig FFI
+  (`fot_send(json)`), plus the HTTP intake for anything that can speak HTTP.
+. *Humans:* `fot` CLI (`fot send`, `fot draft`, `fot ledger`, `fot doctor`)
+  and `fot tui` (a wizard that walks the ladder one level at a time).
+
+`fot serve` is the only daemon, and the CLI starts it on demand.
+
+== Standards and rsr alignment (R10)
+
+* Reusable-workflow pins to standards main HEAD, witnessed green, one PR for
+  all five (the current main pin is unreachable and kills runs at startup).
+* AsciiDoc everywhere; no Markdown left in the tree except tool-mandated
+  instruction files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`), which keep
+  their names.
+* Bun is the only JavaScript runtime touched; no Deno, npm or TypeScript.
+  The foundry's mint stage (`mint.sh` → `mint.ts` under Deno) must be ported
+  before FoT extensions can be minted with the foundry.
+* Guix, not Nix; SPDX headers; rsr-template canonical files present and in
+  sync (the stocktake lists the drift).
+* The local clone: restore the sweep-damaged hunks only; the owner rules on
+  the uncommitted intended work.
+
+== Not building (YAGNI)
+
+No accounts or hosted relay; no analytics on senders or recipients; no
+sentiment scoring of the receiving side; no auto-send that skips the ledger;
+no SSO until an organisation asks; no browser extension until a door is
+proven.
+
+== Decomposition and build order
+
+[cols="1,3,5",options="header"]
+|===
+| SP | Name | Done when
+| SP1 | Runnable | CI green on main; clone repaired; `fot serve` runs engine + intake + MCP in one process; a stranger files one useful report by following the README.
+| SP2 | Doors | `fot` CLI, MCP-native stdio server, `fot doctor` for four hosts, cartridge alias `fot`, release artefact on GitHub Releases + ghcr.
+| SP3 | Ledger | Privacy ledger, deterministic scrubbers, profiles (user/org/service), the "never" list honoured end to end with a test that plants a MAC/IP/build and proves they never leave.
+| SP4 | Calibrator + governor | Severity pair, one-question mismatch, S0 fast path, token buckets, clustering, recipient throttle.
+| SP5 | Ladder L3–L5 + advisor | Evidence capture through the ledger, research-first, fleet features, the five-question advisor with a different model family.
+| SP6 | Personas + TUI | Register profiles, child mode with drawing upload, `fot tui` wizard.
+| SP7 | Foundry off Deno + catalogue | Mint stage ported; the two Antigravity cartridges re-minted only if still wanted; Gemini extension bumped and submitted.
+|===
+
+Each sub-project gets its own spec, plan and PR series. SP1 blocks everything;
+SP3 blocks SP5.
+
+== Rulings (owner, 2026-09-07)
+
+. *Name and identity:* renaming to `fot` rejected. The name stays
+  self-describing and whimsical; `fot` is a shell alias only. A better
+  overall name is still open (see the naming note under Install).
+. *Single-process `fot serve`* replacing the 7700/7722 pair: approved.
+. *Advisor at L2–L3:* on by default. Opt-out per profile, never per report.
+. *Local clone:* restore only the two damaged hunks (`.editorconfig`,
+  `elixir-mcp/ARCHITECTURE.md`); commit this design doc alone on a docs-only
+  branch; the funding and attributes work stays uncommitted for a separate
+  ruling.
+. *`notebooks-mcp` / `visualization-mcp`:* dropped. The Antigravity errors
+  came from its own datacloud servers, never from these cartridges.
+. *Order:* SP1, then SP3 (ledger), then SP2 (doors). SP1 lands as one PR
+  moving all five reusable pins to standards main HEAD plus any unpinned
+  action tag, superseding PRs #85 and #86.
