@@ -107,10 +107,14 @@ Elixir 1.19 / OTP 27._
 === Standards and rsr drift (for R10)
 
 * All five reusable-workflow pins on main point at `7fdc2705`, which is not
-  an ancestor of standards main (`fad242d3`): governance, hypatia-scan,
-  mirror, scorecard, secret-scanner all die at startup. PR #86 fixes
-  governance only; PR #85 fixes all five to a non-head sha whose
-  secret-scanner revision has a `--fail`-repeated bug (not a leak).
+  on standards main (`fad242d3`), and governance, hypatia-scan and mirror
+  die at startup with no check reported. The measured cause is not the
+  sha: at standards HEAD those three reusables request `actions: read`, and
+  the callers here grant only `contents: read`, so GitHub rejects the call
+  before any job runs. PR #88 moves all five pins to HEAD, grants
+  `actions: read` on the three callers, and was witnessed green. It
+  supersedes #85 (a non-head sha) and #86 (governance only). The repo's own
+  trufflehog step also repeated `--fail`; that was the last red.
 * `secret-scanner.yml` also uses an unpinned `actions/checkout@v7`, which the
   estate's sha-pinning rule rejects at startup.
 * CI's Elixir matrix (1.15–1.17) cannot see a dead branch that Elixir 1.19's
@@ -142,8 +146,10 @@ went backwards in *usability*, for five reasons.
   with template manifests that do not know it is an Elixir project. A tool
   with no artefact is only "installed" on the machine where someone last
   ran `mix`, and today that is no machine: 7700 and 7722 are both down.
-. *CI went red and stayed red.* Five dead pins plus an unpinned tag kill
-  every run at startup with no jobs; the two repair PRs each fix part.
+. *CI went red and stayed red.* Callers granting less than the reusables
+  request, a pin off standards main and an unpinned tag killed every run at
+  startup with no jobs, so the failure was invisible; the two earlier
+  repair PRs each fixed part of it.
   Nothing merges, so nothing lands, and the engine has not been touched
   since 17 July.
 . *Work happened in throwaway clones.* The June IDE session minted two
@@ -418,7 +424,8 @@ remains open with the owner.
 == Standards and rsr alignment (R10)
 
 * Reusable-workflow pins to standards main HEAD, witnessed green, one PR for
-  all five (the current main pin is unreachable and kills runs at startup).
+  all five, with the callers' `permissions:` raised to what the reusables
+  request (`actions: read`). Done in PR #88.
 * AsciiDoc everywhere; no Markdown left in the tree except tool-mandated
   instruction files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`), which keep
   their names.
