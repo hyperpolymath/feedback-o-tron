@@ -18,6 +18,8 @@
 *.scm   text eol=lf
 *.ncl   text eol=lf
 *.nix   text eol=lf
+*.zig   text eol=lf
+*.a2ml  text eol=lf linguist-language=TOML
 
 # Docs
 *.md    text eol=lf diff=markdown
@@ -33,6 +35,7 @@
 # Config
 .gitignore     text eol=lf
 .gitattributes text eol=lf
+.editorconfig  text eol=lf
 justfile       text eol=lf
 Makefile       text eol=lf
 Containerfile  text eol=lf
