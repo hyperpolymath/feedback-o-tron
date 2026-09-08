@@ -3,8 +3,8 @@
 :toc: left
 :sectnums:
 :revdate: 2026-09-08
-:revnumber: 0.2
-:status: REVISED 2026-09-08 — committed on PR #87; rulings of 2026-09-07 and 2026-09-08 recorded; two proposals await ruling; nothing is implemented
+:revnumber: 0.3
+:status: REVISED 2026-09-08 — committed on PR #87; rulings of 2026-09-07 and 2026-09-08 recorded, including the two proposals raised in review; nothing is implemented
 
 [NOTE]
 ====
@@ -15,8 +15,9 @@ one sentence, nested from the absolute minimum to the absolute maximum,
 usable anywhere (not only through boj-server), with the safeguards already
 built kept intact. <<stocktake>> records what exists today so the design
 builds on it rather than replacing it. <<rulings>> records the decisions the
-owner has made; <<proposals>> lists the two design changes this revision
-introduces that still need a ruling. Nothing in this document is implemented.
+owner has made; <<proposals>> keeps the reasoning behind the two design
+changes review introduced, both ruled the same day. Nothing in this document
+is implemented.
 ====
 
 == The brief, traced
@@ -193,8 +194,8 @@ default: detected at initialize, used only when the client negotiates a
 revision from 2025-06-18 to 2026-07-28 inclusive and declares the `sampling`
 capability, and retired when the spec removes it. `fot doctor` reports which
 path it found. Own keys or a local model are the rule; a borrowed host model
-is the bonus. (R1, R3) _Proposed 2026-09-08, awaiting ruling: see
-<<proposals>>. The 2026-09-07 draft said the reverse._
+is the bonus. (R1, R3) _Ruled 2026-09-08: accepted; see <<rulings>>. The
+2026-09-07 draft said the reverse._
 P3:: *Ledger before wire.* Nothing leaves the machine until the privacy ledger
 for that report has been shown once and acknowledged; after that, the user's
 standing preferences make it quiet. (R6)
@@ -390,7 +391,7 @@ Rules:
   with the sender told in one sentence. The breaker is never global, so one
   sender cannot close a safety channel for everyone, and it never lowers a
   severity: it changes who reads the claim next, not what the claim says.
-  _Proposed 2026-09-08, awaiting ruling: see <<proposals>>. The 2026-09-07
+  _Ruled 2026-09-08: accepted with N = 3; see <<rulings>>. The 2026-09-07
   draft let S0 bypass budgets outright._
 * Persistent over-declaration by one sender lowers that sender's *auto-accept
   band* gently (the question appears sooner); at S2–S5 it never blocks
@@ -570,8 +571,8 @@ SP1b blocks everything after it; SP3 blocks SP5 and SP8; SP2 blocks SP8.
   (Read with the `no permitted provider` state in <<model-advisor>>: on by
   default wherever a permitted provider exists.)
 . *Local clone:* restore only the damaged hunks; commit this design doc
-  alone on a docs-only branch; the funding and attributes work stays
-  uncommitted for a separate ruling. Of the two hunks named on 2026-09-07,
+  alone on a docs-only branch; the funding and attributes work stayed
+  uncommitted until its own ruling (2026-09-08, below). Of the two hunks named on 2026-09-07,
   `.editorconfig` stands; the `elixir-mcp/ARCHITECTURE.md` hunk is moot
   because main already carries `elixir-mcp/ARCHITECTURE.adoc` and no `.md`
   exists.
@@ -582,27 +583,44 @@ SP1b blocks everything after it; SP3 blocks SP5 and SP8; SP2 blocks SP8.
   the unpinned action tag and raising the callers' permissions, superseding
   PRs #85 and #86; SP1b gets its own plan. The 2026-09-07 text called the
   whole of SP1 "one PR"; the split above is what that PR actually covers.
+. *Provider order* (2026-09-08): a configured provider first, then a local
+  endpoint, then host sampling only where a client still offers it, then
+  none. Host sampling stays opportunistic on spec revisions 2025-06-18 to
+  2026-07-28 that declare it and is retired when the spec removes it. This
+  reverses the 2026-09-07 draft; see P2 in <<principles>> and
+  <<model-advisor>>.
+. *S0 circuit breaker* (2026-09-08): accepted with a default of 3 S0/S1
+  reports per (sender, destination) per day, after which further S0/S1
+  claims go to the named human reviewer or are held as drafts. Profiles
+  may change the number. See <<calibrator>>.
+. *Funding and attributes* (2026-09-08): committed as one corrected PR on
+  its own branch: the uppercase `.github/FUNDING.yml` carries the platform
+  list and the lowercase copy goes, the dual-licence claim sits in a
+  comment beside a valid SPDX tag, the root statement becomes
+  `FUNDING.adoc`, and only the attribute and ignore lines that fit this
+  repository are kept.
 
 [[proposals]]
-== Proposals awaiting ruling (2026-09-08)
+== Proposals raised in review (2026-09-08), ruled the same day
 
-Two changes in this revision alter design the owner approved on 2026-09-07.
-They are written into the sections above so the document is consistent, and
-marked there as proposed. Neither is implemented; both are the owner's call.
+Two changes in this revision altered design the owner approved on 2026-09-07.
+Review raised them; they were written into the sections above marked as
+proposed, and the owner accepted both on 2026-09-08 (<<rulings>>). The
+reasoning is kept here. Neither is implemented.
 
 . *P2 flipped: configured provider first, host sampling opportunistic*
   (<<principles>>, <<model-advisor>>). Reason: MCP Sampling was deprecated in
   the specification revision of 2026-07-28 (SEP-2577), with direct provider
   integration as the stated migration path and removal possible from
   2027-07-28; a design that leads with it would ship on a sunset feature.
-  The alternative is to keep host-first for the hosts that still declare
-  sampling and accept the sunset.
+  The rejected alternative was to keep host-first for the hosts that still
+  declare sampling and accept the sunset.
 . *S0 circuit breaker* (<<calibrator>>). Reason: a fast path that bypasses
   every budget lets one sender flood a safety channel with repeated claims,
   against R4 and R7; the breaker keeps the path fast and never downgrades a
   claim, but caps the count per sender and destination and hands the rest
-  to a human. The alternative is the 2026-09-07 text, in which nothing ever
-  limits S0.
+  to a human. The rejected alternative was the 2026-09-07 text, in which
+  nothing ever limits S0.
 
 Two further additions under R6 are refinements rather than reversals and are
 recorded here so the growth in SP3 is visible: the media redaction path and
