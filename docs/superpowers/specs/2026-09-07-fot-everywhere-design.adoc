@@ -4,7 +4,7 @@
 :sectnums:
 :revdate: 2026-09-08
 :revnumber: 0.3
-:status: REVISED 2026-09-08 — committed on PR #87; rulings of 2026-09-07 and 2026-09-08 recorded, including the two proposals raised in review; nothing is implemented
+:status: REVISED 2026-09-08 — committed on PR #87; rulings of 2026-09-07 and 2026-09-08 recorded, including the two proposals raised in review; one conflict from the second review round awaits ruling; nothing is implemented
 
 [NOTE]
 ====
@@ -342,7 +342,10 @@ service/org/user stack wins, like every other privacy setting.
 Transparency:: the ledger is shown in full once per destination and per
 level; afterwards a one-line summary ("sending 3 items, 2 redacted, nothing
 from the *never* list") unless something new appears. Exactly what was sent
-is stored locally and exportable.
+is stored locally and exportable while the record's retention lasts (the
+lifecycle entry below); once the payload is dropped, an export yields the
+ledger rows and hashes, enough to prove what left and when, not to
+reproduce the text.
 Lifecycle of the local record:: the local record holds the *redacted*
 payload as sent, the ledger rows, and a hash of each raw evidence item; it
 never holds the raw evidence itself, so a `never` class is never on disk
@@ -384,6 +387,12 @@ Rules:
 * S0 is a fast path: it bypasses batching and clustering, goes to the
   destination's safety or security channel where one is known, notifies a
   human where the profile names one, and is never downgraded by any model.
+  Where no channel is known and the profile names no human, FoT reads the
+  destination's RFC 9116 `security.txt` and uses the contact it publishes;
+  where there is none either, the claim is held as a draft, written out as a
+  portable report file, and the sender is told in one sentence where to take
+  it. A first credible S0 claim is never dropped and never slips into the
+  ordinary queue.
 * The fast path keeps one hard control, a *circuit breaker* per (sender,
   destination): after N S0 or S1 reports in a day (default 3) further S0/S1
   claims from that sender are not sent to the channel but routed to the
@@ -411,6 +420,18 @@ Rules:
 * Recipient throttle signals (<<personas>>) are honoured and explained.
 * Agents get hard budgets and idempotency; a fleet must present an org
   profile to exceed the human defaults.
+* *Sender identity is derived, never supplied.* `sender` is the profile in
+  effect, identified by the signed profile's stable id (a hash of its first
+  key, chained across rotations, so rotating a key changes nothing the
+  governor sees). Every door binds it the same way: the loopback doors
+  (stdio MCP, the HTTP intake, the C ABI) inherit the OS user's profile from
+  the process that started `fot serve`, so a caller cannot name or rotate a
+  sender without being a different OS user; a caller presenting no profile
+  runs as the machine's anonymous profile, whose budgets and breaker are the
+  lowest and cannot be raised without an org profile. Counters live in the
+  local record store and survive restarts; the only reset is `fot ledger
+  purge --all`, which also resets the sender's auto-accept band, so a purge
+  to evade the breaker costs the sender their standing.
 
 [[usefulness]]
 == Usefulness gate (R4)
@@ -439,8 +460,11 @@ sampling where a client still offers it* → *none* (L0–L1 are fully
 deterministic). Host sampling is detected, never assumed: the MCP initialize
 handshake carries the client's protocol revision and capabilities, and FoT
 uses sampling only on revisions 2025-06-18 through 2026-07-28 that declare
-it; the feature is deprecated from 2026-07-28 and FoT drops the path in the
-release after the spec removes it (<<principles>>, P2). `fot doctor --host`
+it; the feature is deprecated from 2026-07-28 and FoT retires the path when
+the spec removes it, the same cutoff as P2 in <<principles>>: the negotiated
+revision is compared with the last revision that carries sampling, and a
+client on a later revision never gets the path, whatever FoT release is
+running. SP2 carries a negotiated-version test at that boundary. `fot doctor --host`
 reports which path it found and, for sampling, the revision negotiated.
 
 *No permitted provider.* A `local-only` profile with no local endpoint
@@ -460,7 +484,7 @@ therefore reads "on by default wherever a permitted provider exists".
 | Classification, redaction assist, register detection | Haiku 4.5 (`claude-haiku-4-5-20251001`) | low | Cheap, fast, runs on every send; deterministic scrubbers run first.
 | Synthesis, hydration, recipient-side draft | Sonnet 5 (`claude-sonnet-5`) | medium | Escalate to high when derived severity ≤ S1 or level ≥ L4.
 | Research (L4) | Sonnet 5 | medium | Read-only Net capability; sources cited in the report.
-| Advisor (pre-send review) | Opus 5 (`claude-opus-5`); Fable 5.1 where available | high | Sees the full draft, ledger, evidence and profile, all post-scrub. Mandatory for S0/S1, L4+, and org profiles; on by default at L2–L3 (ruled 2026-09-07) with opt-out per profile, never per report; absent at L0–L1 and wherever no permitted provider exists.
+| Advisor (pre-send review) | Opus 5 (`claude-opus-5`); Fable 5.1 where available | high | Sees the full draft, the ledger, the *text* evidence and the profile, all post-scrub; media never reaches it (it sees OCR text and the redaction diff only), and the same rule binds every sampling call. Mandatory for S0/S1, L4+, and org profiles; on by default at L2–L3 (ruled 2026-09-07) with opt-out per profile, never per report; absent at L0–L1 and wherever no permitted provider exists.
 | Local / private tier | Ollama or any OpenAI-compatible local endpoint | as configured | For `local-only` profiles; L2 quality degrades, ledger and gates do not.
 |===
 
@@ -468,7 +492,14 @@ The advisor answers five fixed questions and may only *return* the report,
 never edit it: Is it useful to the recipient? Is it safe (no harassment, no
 targeting)? Is the priority pair honest? Does the ledger match the payload?
 Is the register right for the recipient? A "no" comes back with the reason
-in one sentence. Where a host still lends its model over sampling, the
+in one sentence, and it blocks: the report is held as a draft with the
+reason attached, on the own-provider path and the sampling path alike, and
+no door can send past it. A "no" to the safety question is final. On the
+other four, a human sender may read the reason and still send under their
+own name, except at S0/S1, at L4 and above, and under an org profile, where
+the held draft goes to the named human reviewer instead; an agent or a door
+with no human gets the hold and nothing else. The advisor's input is text
+and metadata only; no image, audio or video enters it or any sampling call. Where a host still lends its model over sampling, the
 advisor runs as a second sampling call with a different system prompt; where
 possible it uses a different model family from the synthesiser so the two do
 not share blind spots.
@@ -547,9 +578,9 @@ proven.
 | SP | Name | Done when
 | SP1a | Runnable: CI | CI green on main with every reusable pin at standards HEAD and the callers' permissions matching (PR #88, witnessed green); the local clone's sweep damage restored; the uncommitted funding and attributes work landed or discarded per the owner's ruling.
 | SP1b | Runnable: product | `fot serve` hosts the *existing* stdio MCP server, the HTTP intake and the engine in one OS process, started on demand by the CLI; the Deno remnants in this repo removed; the manifests declare Elixir/OTP; a stranger files one useful report by following the README (test: a fresh machine, the README only, one GitHub issue lands).
-| SP2 | Doors | `fot` CLI (`send`, `draft`, `ledger`, `doctor`); streamable-HTTP MCP transport added to `fot serve`; the provider abstraction with configured, local and opportunistic-sampling providers, credentials through the existing credential store, and the fallback rules of <<model-advisor>>, with an L2 test that synthesises one report through a stubbed provider and one that proves the `no permitted provider` state degrades to L1; `fot doctor` for `antigravity`, `vscode`, `claude-code` and `gemini-cli` with a handshake test each; cartridge renamed `feedback-o-tron` with `fot` and `bug-filing-mcp` as aliases; release artefact on GitHub Releases + ghcr.
+| SP2 | Doors | `fot` CLI (`send`, `draft`, `ledger`, `doctor`); streamable-HTTP MCP transport added to `fot serve`; the provider abstraction with configured, local and opportunistic-sampling providers, credentials through the existing credential store, and the fallback rules of <<model-advisor>>, with an L2 test that synthesises one report through a stubbed provider, one that proves the `no permitted provider` state degrades to L1, and one at the sampling retirement boundary (a client negotiating a revision after the last that carries sampling never gets the path); the L0 offline path: an on-disk queue that replays when the destination is reachable and the portable report file when no channel is known, tested by filing one note with the network off and seeing it land when the network returns, and by writing one portable file; `fot doctor` for `antigravity`, `vscode`, `claude-code` and `gemini-cli` with a handshake test each; cartridge renamed `feedback-o-tron` with `fot` and `bug-filing-mcp` as aliases; release artefact on GitHub Releases + ghcr.
 | SP3 | Ledger | Privacy ledger with destination rows, deterministic scrubbers, media redaction path, `model_locality`, local-record lifecycle (encryption at rest, `0600`, retention, `fot ledger purge`), profiles (user/org/service); the "never" list honoured end to end with a test that plants a MAC, an IP and a build number in text *and* an IP in a screenshot and proves none leaves, to a destination or to a model.
-| SP4 | Calibrator + governor | Severity pair, one-question mismatch, S0 fast path with the per-(sender, destination) circuit breaker and human escalation, token buckets, clustering, recipient throttle.
+| SP4 | Calibrator + governor | Severity pair, one-question mismatch, S0 fast path with its `security.txt` and held-draft fallback, the per-(sender, destination) circuit breaker and human escalation, sender identity bound at every door as <<governor>> defines, token buckets, clustering, recipient throttle; the usefulness gate: the actionability predicate in the Idris2 contract with the Elixir implementation checked against it by a parity test (one fixture set run through both), and a negative test that a report with no ask is returned, never sent.
 | SP5 | Ladder L3–L5 + advisor | Evidence capture through the ledger (media only once SP3's path exists), research-first, fleet features, the five-question advisor with a different model family; `cursor` and `zed` added to `fot doctor` with handshake tests.
 | SP6 | Personas + TUI | Register profiles, child mode with drawing upload, `fot tui` wizard.
 | SP7 | Foundry off Deno + catalogue | Mint stage ported; Gemini extension bumped and submitted. (The two Antigravity cartridges were dropped by ruling.)
@@ -625,3 +656,17 @@ reasoning is kept here. Neither is implemented.
 Two further additions under R6 are refinements rather than reversals and are
 recorded here so the growth in SP3 is visible: the media redaction path and
 the local-record lifecycle (<<ledger>>).
+
+A second review round on 2026-09-08 added eight refinements, none reversing
+a ruling: the audit export bounded by retention and the S0 fallback route
+(<<ledger>>, <<calibrator>>); sender identity derived from the profile
+(<<governor>>); the sampling cutoff tied to the spec, the advisor limited to
+text, and an advisor "no" that holds the report (<<model-advisor>>); the
+L0 offline path assigned to SP2 and the usefulness gate to SP4 with tests
+(<<decomposition>>). It also raised one conflict that awaits ruling: SP1b's
+stranger test sends a real GitHub issue before SP3 builds the ledger that P3
+requires in front of every wire. The options are to run SP1b's send only
+after a human has seen the whole payload and said yes (the pre-ledger rule,
+with the stranger test aimed at a sandbox repository), to end SP1b's test at
+a portable report file and move the real send after SP3, or to build SP3
+before SP1b.
