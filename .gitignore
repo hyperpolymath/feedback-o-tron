@@ -61,6 +61,11 @@ __pycache__/
 # Chapel
 *.chpl.tmp.*
 
+# Zig
+zig-out/
+zig-cache/
+.zig-cache/
+
 # Secrets
 .env
 .env.*
@@ -80,6 +85,9 @@ htmlcov/
 /tmp/
 *.tmp
 *.bak
+
+# Backup/scratch files (never commit)
+*.backup
 
 # Crash recovery artifacts
 ai-cli-crash-capture/

@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+// Licence statement: MPL-2.0 for code, CC-BY-SA-4.0 for documentation
+
+= Funding
+:toc: macro
+:toclevels: 2
+
+This document lists the supported funding platforms for the hyperpolymath and metadatastician estates.
+
+== Supported Funding Platforms
+
+[cols="1,1",options="header"]
+|===
+| Platform | Username
+| Buy Me a Coffee | jonathan.jewell
+| Community Bridge | jonathan-jewell
+| GitHub Sponsors | hyperpolymath
+| IssueHunt | hyperpolymath
+| Ko-fi | hyperpolymath
+| LFX Crowdfunding | hyperpolymath
+| LiberaPay | hyperpolymath
+| Open Collective | jonathan-jewell
+| Patreon | cc_studio
+| Polar | hyperpolymath
+| Thanks Dev | hyperpolymath
+|===
+
+== Usage
+
+These platforms provide financial support mechanisms for the projects within the hyperpolymath and metadatastician estates. Contributions through any of these platforms help sustain development, maintenance, and governance of the open source projects.
+
+For more information about contributing or sponsoring specific projects, please refer to the project's README file or contact the maintainers directly.
