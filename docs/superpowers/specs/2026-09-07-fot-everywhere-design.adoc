@@ -4,7 +4,7 @@
 :sectnums:
 :revdate: 2026-09-08
 :revnumber: 0.3
-:status: REVISED 2026-09-08 — committed on PR #87; rulings of 2026-09-07 and 2026-09-08 recorded, including the two proposals raised in review; one conflict from the second review round awaits ruling; nothing is implemented
+:status: REVISED 2026-09-08 — committed on PR #87; rulings of 2026-09-07 and 2026-09-08 recorded, including the two proposals raised in review; the one conflict from the second review round was ruled on 2026-09-08; nothing is implemented
 
 [NOTE]
 ====
@@ -630,6 +630,26 @@ SP1b blocks everything after it; SP3 blocks SP5 and SP8; SP2 blocks SP8.
   comment beside a valid SPDX tag, the root statement becomes
   `FUNDING.adoc`, and only the attribute and ignore lines that fit this
   repository are kept.
+. *Pre-ledger rule, CLI only* (2026-09-08): this resolves the P3-vs-SP1b
+  conflict recorded in <<proposals>>. SP1b's CLI may send before SP3 builds
+  the ledger, on one condition: `submit` without `--dry-run` prints the
+  *entire* payload — every field that will leave the machine — and refuses
+  to proceed without a typed `y` at a terminal. There is deliberately *no*
+  `--yes` flag, and a non-terminal stdin is a refusal, not a default-yes:
+  the gate exists to put a person in front of the wire, and a flag that
+  skips it would delete the only thing standing in for the ledger. The MCP
+  and HTTP doors accept reports in SP1b but do not send. When SP3 lands, the
+  ledger goes in front of every door and this rule is subsumed rather than
+  repealed.
+. *Stranger test target* (2026-09-08): SP1b's acceptance test files into
+  `hyperpolymath/feedback-o-tron` itself, with the title prefixed
+  `[stranger test]`, closed immediately after. Not a sandbox repository:
+  the test's whole claim is that a stranger's report arrives where reports
+  actually go, and a sandbox would exercise a path no real reporter takes.
+  The test asserts on the *title prefix only* — `POST /issues` silently
+  drops `labels` from a sender without push access, so asserting on a label
+  would pass for the owner and fail for exactly the stranger the test is
+  named after.
 
 [[proposals]]
 == Proposals raised in review (2026-09-08), ruled the same day
@@ -663,10 +683,10 @@ a ruling: the audit export bounded by retention and the S0 fallback route
 (<<governor>>); the sampling cutoff tied to the spec, the advisor limited to
 text, and an advisor "no" that holds the report (<<model-advisor>>); the
 L0 offline path assigned to SP2 and the usefulness gate to SP4 with tests
-(<<decomposition>>). It also raised one conflict that awaits ruling: SP1b's
-stranger test sends a real GitHub issue before SP3 builds the ledger that P3
-requires in front of every wire. The options are to run SP1b's send only
-after a human has seen the whole payload and said yes (the pre-ledger rule,
-with the stranger test aimed at a sandbox repository), to end SP1b's test at
-a portable report file and move the real send after SP3, or to build SP3
-before SP1b.
+(<<decomposition>>). It also raised one conflict, *ruled on 2026-09-08* and no longer
+open: SP1b's stranger test sends a real GitHub issue before SP3 builds the
+ledger that P3 requires in front of every wire. Three options were put — the
+pre-ledger rule; ending SP1b's test at a portable report file and moving the
+real send after SP3; or building SP3 before SP1b. The owner took the first,
+with one change from the way it was offered: the stranger test aims at this
+repository rather than a sandbox. Both halves are recorded in <<rulings>>.
