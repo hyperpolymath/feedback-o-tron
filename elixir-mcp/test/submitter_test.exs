@@ -27,6 +27,17 @@ defmodule FeedbackATron.SubmitterTest do
       _pid -> :ok
     end
 
+    case Process.whereis(FeedbackATron.RateLimiter) do
+      nil -> FeedbackATron.RateLimiter.start_link([])
+      _pid -> :ok
+    end
+
+    # The rate limiter is global state shared with rate_limiter_test.exs,
+    # whose acquire/1 tests leave a 2 s GitHub cooldown behind them.
+    for platform <- [:github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email] do
+      FeedbackATron.RateLimiter.reset(platform)
+    end
+
     :ok = FeedbackATron.Deduplicator.clear()
     :ok
   end
