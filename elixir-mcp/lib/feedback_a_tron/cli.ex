@@ -97,6 +97,26 @@ defmodule FeedbackATron.CLI do
 
   defp submit(issue, submit_opts, run_opts) do
     {:ok, _} = Application.ensure_all_started(:feedback_a_tron)
+
+    if submit_opts[:dry_run] or confirm_send(issue, submit_opts, run_opts) do
+      do_submit(issue, submit_opts, run_opts)
+    else
+      IO.puts(:stderr, "Not sent.")
+      {:halt, 3}
+    end
+  end
+
+  # SP1b pre-ledger rule: nothing leaves the machine from the CLI until a
+  # person has seen the whole payload and typed yes at a terminal. The privacy
+  # ledger (SP3) replaces this with a per-report ledger and standing choices.
+  # There is no --yes flag on purpose.
+  defp confirm_send(issue, submit_opts, run_opts) do
+    IO.puts(payload_preview(issue, submit_opts))
+    confirm = Keyword.get(run_opts, :confirm, &tty_confirm/0)
+    confirm.()
+  end
+
+  defp do_submit(issue, submit_opts, run_opts) do
     submit_fun = Keyword.get(run_opts, :submit, &Submitter.submit/2)
 
     case submit_fun.(issue, submit_opts) do
@@ -108,6 +128,60 @@ defmodule FeedbackATron.CLI do
       {:error, reason} ->
         IO.puts(:stderr, "\n❌ Submission failed: #{inspect(reason)}")
         {:halt, 1}
+    end
+  end
+
+  @doc false
+  def payload_preview(issue, submit_opts) do
+    platforms =
+      submit_opts |> Keyword.get(:platforms, [:github]) |> Enum.map_join(", ", &to_string/1)
+
+    labels = submit_opts |> Keyword.get(:labels, []) |> Enum.join(", ")
+
+    optional =
+      for {label, key} <- [{"Component:   ", :component}, {"Version:     ", :version}],
+          value = Keyword.get(submit_opts, key),
+          not is_nil(value),
+          do: "#{label} #{value}\n"
+
+    """
+    About to send this report. Everything below leaves this machine; nothing else does.
+
+    Destinations: #{platforms}
+    Repository:   #{issue.repo}
+    Title:        #{issue.title}
+    Labels:       #{if labels == "", do: "(none)", else: labels}
+    #{Enum.join(optional)}Body:
+    #{indent(issue.body)}
+    """
+  end
+
+  defp indent(text) do
+    text |> String.split("\n") |> Enum.map_join("\n", &("    " <> &1))
+  end
+
+  defp tty_confirm do
+    if stdin_tty?() do
+      answer = IO.gets("Send this report? [y/N] ")
+      is_binary(answer) and String.downcase(String.trim(answer)) in ["y", "yes"]
+    else
+      IO.puts(
+        :stderr,
+        "feedback-o-tron: stdin is not a terminal; refusing to send without a person's yes. " <>
+          "Use --dry-run to preview."
+      )
+
+      false
+    end
+  end
+
+  # OTP 26+ exports :prim_tty.isatty/1 (it answers false for a pipe and for
+  # a closed stdin); :io.columns/0 is the older proxy for the same question.
+  defp stdin_tty? do
+    if Code.ensure_loaded?(:prim_tty) and function_exported?(:prim_tty, :isatty, 1) do
+      :prim_tty.isatty(:stdin) == true
+    else
+      match?({:ok, _}, :io.columns())
     end
   end
 
@@ -241,7 +315,11 @@ defmodule FeedbackATron.CLI do
         --version VER       Bugzilla version
         --dry-run           Print what would be sent and send nothing
 
-        Exit codes: 0 sent (or dry run); 1 bad arguments or a destination failed.
+        Without --dry-run the full payload is printed and you are asked
+        "Send this report? [y/N]". Nothing is sent without a y typed at a
+        terminal; there is no --yes flag.
+        Exit codes: 0 sent (or dry run); 1 bad arguments or a destination
+        failed; 3 not sent.
 
     CREDENTIALS:
         GitHub: `gh auth login` (the gh CLI's token is used), or GITHUB_TOKEN.

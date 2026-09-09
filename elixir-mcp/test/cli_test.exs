@@ -158,4 +158,65 @@ defmodule FeedbackATron.CLITest do
       assert err =~ "Submission failed: :no_credentials"
     end
   end
+
+  describe "run/2 confirm gate" do
+    @args [
+      "submit",
+      "--repo",
+      "o/r",
+      "--title",
+      "T",
+      "--body",
+      "line one\nline two",
+      "--label",
+      "bug"
+    ]
+
+    test "prints the whole payload and refuses when the person says no" do
+      submit = fn _issue, _opts -> flunk("nothing may be sent after a no") end
+
+      {result, out} =
+        with_io(fn -> CLI.run(@args, confirm: fn -> false end, submit: submit) end)
+
+      assert result == {:halt, 3}
+      assert out =~ "Everything below leaves this machine; nothing else does."
+      assert out =~ "Destinations: github"
+      assert out =~ "Repository:   o/r"
+      assert out =~ "Title:        T"
+      assert out =~ "Labels:       bug"
+      assert out =~ "    line one\n    line two"
+    end
+
+    test "sends when the person says yes and halts 0 on success" do
+      submit = fn issue, opts ->
+        assert issue.title == "T"
+        assert opts[:platforms] == [:github]
+        {:ok, "sub-1", [{:ok, %{platform: :github, url: "https://github.com/o/r/issues/1"}}]}
+      end
+
+      {result, out} =
+        with_io(fn -> CLI.run(@args, confirm: fn -> true end, submit: submit) end)
+
+      assert result == {:halt, 0}
+      assert out =~ "✓ github: https://github.com/o/r/issues/1"
+    end
+
+    test "--dry-run never asks" do
+      confirm = fn -> flunk("a dry run must not prompt") end
+      {result, out} = with_io(fn -> CLI.run(@args ++ ["--dry-run"], confirm: confirm) end)
+      assert result == {:halt, 0}
+      assert out =~ "[DRY RUN] github: Would submit"
+    end
+
+    test "payload_preview/2 lists Bugzilla component and version only when set" do
+      issue = %{title: "T", body: "B", repo: "fedora"}
+      opts = [platforms: [:bugzilla], labels: [], component: "maliit-keyboard", version: "43"]
+      preview = CLI.payload_preview(issue, opts)
+      assert preview =~ "Destinations: bugzilla"
+      assert preview =~ "Component:    maliit-keyboard"
+      assert preview =~ "Version:      43"
+      assert preview =~ "Labels:       (none)"
+      refute CLI.payload_preview(issue, platforms: [:github]) =~ "Component:"
+    end
+  end
 end
