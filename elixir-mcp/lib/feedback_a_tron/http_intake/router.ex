@@ -10,6 +10,11 @@ defmodule FeedbackATron.HTTPIntake.Router do
   path used by the MCP `submit_feedback` tool — no separate submission logic, so audit
   logging, dedup, rate-limiting and dry-run all behave identically.
 
+  Like the MCP door, this door never sends. Consent is a person reading the whole
+  payload at a terminal and typing y (`feedback-o-tron submit ...`); it cannot be
+  asserted over the wire, so a report filed here comes back
+  `drafted_needs_human_consent`.
+
   Off by default; enabled via `FEEDBACK_A_TRON_HTTP` (see `FeedbackATron.Application`).
 
   ## Routes
@@ -28,6 +33,10 @@ defmodule FeedbackATron.HTTPIntake.Router do
 
   alias FeedbackATron.{Params, Submitter}
   alias FeedbackATron.Synthesis.{Research, Synthesizer}
+
+  # SP1b pre-ledger rule: see the moduledoc. Kept identical in substance to the
+  # MCP door's wording so a cartridge relaying either sees the same sentence.
+  @needs_consent_detail "This door never sends. The report was drafted and checked for duplicates, but filing it requires a person: run `feedback-o-tron submit ...` at a terminal, read the whole payload, and type y."
 
   plug(:match)
   plug(Plug.Parsers, parsers: [:json], pass: ["application/json"], json_decoder: Jason)
@@ -194,6 +203,14 @@ defmodule FeedbackATron.HTTPIntake.Router do
         {:ok, %{platform: platform, status: :dry_run, would_submit: issue}} ->
           %{platform: platform, status: "dry_run", title: issue.title}
 
+        {:ok, %{platform: platform, status: :drafted_needs_human_consent, would_submit: issue}} ->
+          %{
+            platform: platform,
+            status: "drafted_needs_human_consent",
+            title: issue.title,
+            detail: @needs_consent_detail
+          }
+
         {:error, %{platform: platform, error: error}} ->
           %{platform: platform, status: "error", error: inspect(error)}
 
@@ -214,7 +231,8 @@ defmodule FeedbackATron.HTTPIntake.Router do
     count = fn status -> Enum.count(results, &(Map.get(&1, :status) == status)) end
 
     "Submitted: #{count.("success")}, Errors: #{count.("error")}, " <>
-      "Skipped: #{count.("skipped")}, Dry run: #{count.("dry_run")}"
+      "Skipped: #{count.("skipped")}, Dry run: #{count.("dry_run")}, " <>
+      "Needs consent: #{count.("drafted_needs_human_consent")}"
   end
 
   defp send_json(conn, status, payload) do

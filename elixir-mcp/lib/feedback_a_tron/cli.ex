@@ -105,11 +105,18 @@ defmodule FeedbackATron.CLI do
   defp submit(issue, submit_opts, run_opts) do
     {:ok, _} = Application.ensure_all_started(:feedback_a_tron)
 
-    if submit_opts[:dry_run] or confirm_send(issue, submit_opts, run_opts) do
-      do_submit(issue, submit_opts, run_opts)
-    else
-      IO.puts(:stderr, "Not sent.")
-      {:halt, 3}
+    cond do
+      submit_opts[:dry_run] ->
+        do_submit(issue, submit_opts, run_opts)
+
+      confirm_send(issue, submit_opts, run_opts) ->
+        # The person saw the whole payload and typed y. That yes, and nothing
+        # else, is what lets Submitter really send.
+        do_submit(issue, Keyword.put(submit_opts, :consent, :human_confirmed), run_opts)
+
+      true ->
+        IO.puts(:stderr, "Not sent.")
+        {:halt, 3}
     end
   end
 

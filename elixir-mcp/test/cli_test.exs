@@ -208,6 +208,62 @@ defmodule FeedbackATron.CLITest do
       assert out =~ "[DRY RUN] github: Would submit"
     end
 
+    # The person's typed y is the ONLY thing that may put :consent into the
+    # opts that reach Submitter.submit/2. Exercised through the in-suite seam:
+    # an assistant may never type that y itself.
+    test "a yes attaches consent: :human_confirmed to the opts that reach the submitter" do
+      parent = self()
+
+      submit = fn _issue, opts ->
+        send(parent, {:seam_opts, opts})
+        {:ok, "sub-1", [{:ok, %{platform: :github, url: "https://github.com/o/r/issues/1"}}]}
+      end
+
+      {result, out} =
+        with_io(fn -> CLI.run(@args, confirm: fn -> true end, submit: submit) end)
+
+      assert result == {:halt, 0}
+      assert out =~ "✓ github: https://github.com/o/r/issues/1"
+
+      assert_received {:seam_opts, opts}
+      assert opts[:consent] == :human_confirmed
+    end
+
+    test "a no reaches the submitter seam not at all" do
+      parent = self()
+
+      submit = fn _issue, opts ->
+        send(parent, {:seam_opts, opts})
+        flunk("nothing may be sent after a no")
+      end
+
+      {result, _out} =
+        with_io(fn -> CLI.run(@args, confirm: fn -> false end, submit: submit) end)
+
+      assert result == {:halt, 3}
+      refute_received {:seam_opts, _}
+    end
+
+    test "a dry run carries no consent" do
+      parent = self()
+
+      submit = fn _issue, opts ->
+        send(parent, {:seam_opts, opts})
+        {:ok, "sub-3", [{:ok, %{platform: :github, status: :dry_run, would_submit: %{}}}]}
+      end
+
+      confirm = fn -> flunk("a dry run must not prompt") end
+
+      {result, _out} =
+        with_io(fn -> CLI.run(@args ++ ["--dry-run"], confirm: confirm, submit: submit) end)
+
+      assert result == {:halt, 0}
+
+      assert_received {:seam_opts, opts}
+      assert opts[:dry_run] == true
+      refute Keyword.has_key?(opts, :consent)
+    end
+
     test "payload_preview/2 lists Bugzilla component and version only when set" do
       issue = %{title: "T", body: "B", repo: "fedora"}
       opts = [platforms: [:bugzilla], labels: [], component: "maliit-keyboard", version: "43"]

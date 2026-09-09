@@ -13,6 +13,11 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
   alias FeedbackATron.{Params, Submitter}
   require Logger
 
+  # SP1b pre-ledger rule: this door never sends. Consent is a person typing y
+  # at a terminal after reading the whole payload; it cannot be asserted over
+  # the wire, so every report filed through here comes back drafted.
+  @needs_consent_detail "This door never sends. The report was drafted and checked for duplicates, but filing it requires a person: run `feedback-o-tron submit ...` at a terminal, read the whole payload, and type y."
+
   @impl true
   def name, do: "submit_feedback"
 
@@ -25,11 +30,16 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
     Can submit to multiple platforms simultaneously.
     Includes deduplication to avoid creating duplicate issues.
 
+    This door drafts and dedup-checks; it never files. Nothing leaves the
+    machine until a person runs `feedback-o-tron submit ...` at a terminal,
+    reads the whole payload and types y. There is no way to assert that
+    consent from here.
+
     Recommended interactive loop:
     1. research_feedback — check for duplicates and discover the repo's templates
     2. synthesize_feedback — shape the raw feedback into a template-fitting draft
     3. Resolve any open_questions with your user
-    4. submit_feedback — file the report with template + template_data
+    4. submit_feedback — draft the report with template + template_data
     """
   end
 
@@ -127,6 +137,14 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
         {:ok, %{platform: platform, status: :dry_run, would_submit: issue}} ->
           %{platform: platform, status: "dry_run", title: issue.title}
 
+        {:ok, %{platform: platform, status: :drafted_needs_human_consent, would_submit: issue}} ->
+          %{
+            platform: platform,
+            status: "drafted_needs_human_consent",
+            title: issue.title,
+            detail: @needs_consent_detail
+          }
+
         {:error, %{platform: platform, error: error}} ->
           %{platform: platform, status: "error", error: inspect(error)}
 
@@ -152,8 +170,10 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
     errors = Enum.count(results, &(&1.status == "error"))
     skipped = Enum.count(results, &(&1.status == "skipped"))
     dry_run = Enum.count(results, &(&1.status == "dry_run"))
+    needs_consent = Enum.count(results, &(&1.status == "drafted_needs_human_consent"))
 
-    "Submitted: #{success}, Errors: #{errors}, Skipped: #{skipped}, Dry run: #{dry_run}"
+    "Submitted: #{success}, Errors: #{errors}, Skipped: #{skipped}, " <>
+      "Dry run: #{dry_run}, Needs consent: #{needs_consent}"
   end
 
   defp format_text(payload) do

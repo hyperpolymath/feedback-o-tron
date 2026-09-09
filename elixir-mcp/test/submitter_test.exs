@@ -158,4 +158,51 @@ defmodule FeedbackATron.SubmitterTest do
       assert length(results) == 2
     end
   end
+
+  # SP1b pre-ledger rule: nothing leaves this machine unless a person saw the
+  # whole payload and typed y. Only CLI.submit/3 attaches :consent, and only
+  # after the person confirmed; every other caller must land here.
+  describe "consent gate" do
+    test "no :consent with dry_run: false is drafted, never sent" do
+      issue = %{title: "Consent gate: unconsented submit", body: "body", repo: "owner/repo"}
+
+      {:ok, _id, [result]} =
+        FeedbackATron.Submitter.submit(issue, platforms: [:github], dry_run: false)
+
+      assert {:ok, %{platform: :github, status: :drafted_needs_human_consent}} = result
+
+      {:ok, drafted} = result
+      assert drafted.would_submit.title == issue.title
+      assert drafted.would_submit.body == issue.body
+
+      # Nothing was sent: the real-send branch is the only one that produces a
+      # URL, and it is the only one that reads credentials.
+      refute Map.has_key?(drafted, :url)
+    end
+
+    test "submit_batch with no consent drafts every issue" do
+      issues = [
+        %{title: "Consent gate: batch one", body: "b1", repo: "owner/repo"},
+        %{title: "Consent gate: batch two", body: "b2", repo: "owner/repo"}
+      ]
+
+      {:ok, results} = FeedbackATron.Submitter.submit_batch(issues, platforms: [:github])
+
+      assert length(results) == 2
+
+      for {_id, platform_results} <- results do
+        assert [{:ok, %{platform: :github, status: :drafted_needs_human_consent}}] =
+                 platform_results
+      end
+    end
+
+    test "dry_run: true is still :dry_run when consent is absent" do
+      issue = %{title: "Consent gate: dry run wins", body: "body", repo: "owner/repo"}
+
+      {:ok, _id, [result]} =
+        FeedbackATron.Submitter.submit(issue, platforms: [:github], dry_run: true)
+
+      assert {:ok, %{platform: :github, status: :dry_run}} = result
+    end
+  end
 end
