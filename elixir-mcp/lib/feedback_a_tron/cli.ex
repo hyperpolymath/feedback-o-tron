@@ -9,6 +9,7 @@ defmodule FeedbackATron.CLI do
 
   alias FeedbackATron.Submitter
 
+  @spec main([String.t()]) :: no_return()
   def main(args) do
     case run(args) do
       {:halt, code} -> System.halt(code)
@@ -51,6 +52,12 @@ defmodule FeedbackATron.CLI do
   end
 
   @doc false
+  @spec parse_args([String.t()]) ::
+          {:serve, keyword()}
+          | {:submit, map(), keyword()}
+          | {:version}
+          | {:help}
+          | {:error, String.t()}
   def parse_args(["serve" | rest]), do: parse_serve_flags(rest, mcp_stdio: true, http: true)
 
   def parse_args(["--mcp-server" | rest]),
@@ -132,6 +139,7 @@ defmodule FeedbackATron.CLI do
   end
 
   @doc false
+  @spec payload_preview(map(), keyword()) :: String.t()
   def payload_preview(issue, submit_opts) do
     platforms =
       submit_opts |> Keyword.get(:platforms, [:github]) |> Enum.map_join(", ", &to_string/1)
