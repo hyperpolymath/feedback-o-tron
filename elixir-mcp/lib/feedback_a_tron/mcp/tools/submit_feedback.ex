@@ -73,10 +73,6 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
           items: %{type: "string"},
           description: "Labels to apply (platform-dependent)"
         },
-        dry_run: %{
-          type: "boolean",
-          description: "If true, show what would be submitted without actually submitting"
-        },
         skip_dedupe: %{
           type: "boolean",
           description: "If true, skip duplicate checking"
@@ -105,10 +101,12 @@ defmodule FeedbackATron.MCP.Tools.SubmitFeedback do
       template_data: params["template_data"]
     }
 
+    # Deliberately a fixed whitelist, and deliberately without :dry_run or
+    # :consent. A client cannot put anything into these opts that the Submitter
+    # would read as a person's yes.
     opts = [
       platforms: Params.parse_platforms(params["platforms"]),
       labels: params["labels"] || [],
-      dry_run: params["dry_run"] || false,
       dedupe: not (params["skip_dedupe"] || false)
     ]
 

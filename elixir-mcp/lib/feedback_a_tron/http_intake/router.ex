@@ -8,7 +8,7 @@ defmodule FeedbackATron.HTTPIntake.Router do
   real engine (see `docs/AUTONOMOUS-BUG-PIPELINE.adoc`, contract C2 / D0 = new wrapping
   cartridge). It is a thin, localhost-only JSON adapter over the *same* `Submitter.submit/2`
   path used by the MCP `submit_feedback` tool — no separate submission logic, so audit
-  logging, dedup, rate-limiting and dry-run all behave identically.
+  logging, dedup and rate-limiting all behave identically.
 
   Like the MCP door, this door never sends. Consent is a person reading the whole
   payload at a terminal and typing y (`feedback-o-tron submit ...`); it cannot be
@@ -20,7 +20,7 @@ defmodule FeedbackATron.HTTPIntake.Router do
   ## Routes
 
   - `GET  /health`                     → `{"status":"ok"}`
-  - `POST /api/v1/submit_feedback`     → body `{title, body, repo, platforms?, labels?, dry_run?, skip_dedupe?, template?, template_data?}`
+  - `POST /api/v1/submit_feedback`     → body `{title, body, repo, platforms?, labels?, skip_dedupe?, template?, template_data?}`
   - `POST /api/v1/research_feedback`   → body `{repo, title, body?, limit?, include_templates?}`
   - `POST /api/v1/synthesize_feedback` → body `{raw_feedback, repo, context?, system_state?, template?, network_probe?}`
 
@@ -165,10 +165,12 @@ defmodule FeedbackATron.HTTPIntake.Router do
           template_data: params["template_data"]
         }
 
+        # Deliberately a fixed whitelist, and deliberately without :dry_run or
+        # :consent. A caller cannot put anything into these opts that the
+        # Submitter would read as a person's yes.
         opts = [
           platforms: Params.parse_platforms(params["platforms"]),
           labels: params["labels"] || [],
-          dry_run: params["dry_run"] || false,
           dedupe: not (params["skip_dedupe"] || false)
         ]
 
