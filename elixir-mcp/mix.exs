@@ -74,10 +74,7 @@ defmodule FeedbackATron.MixProject do
   end
 
   defp escript do
-    [
-      main_module: FeedbackATron.CLI,
-      name: "feedback-a-tron"
-    ]
+    [main_module: FeedbackATron.CLI, name: "feedback-a-tron", app: nil]
   end
 
   defp releases do
