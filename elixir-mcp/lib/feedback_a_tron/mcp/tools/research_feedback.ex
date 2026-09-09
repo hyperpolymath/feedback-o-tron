@@ -77,14 +77,8 @@ defmodule FeedbackATron.MCP.Tools.ResearchFeedback do
       |> put_opt(:limit, params["limit"])
       |> put_opt(:include_templates, params["include_templates"])
 
-    case Research.research(request, opts) do
-      {:ok, result} ->
-        {:ok, [%{type: "text", text: Jason.encode!(result)}]}
-
-      {:error, reason} ->
-        Logger.error("MCP research_feedback failed: #{inspect(reason)}")
-        {:error, reason}
-    end
+    {:ok, result} = Research.research(request, opts)
+    {:ok, [%{type: "text", text: Jason.encode!(result)}]}
   rescue
     exception ->
       Logger.error("MCP research_feedback exception: #{Exception.message(exception)}")

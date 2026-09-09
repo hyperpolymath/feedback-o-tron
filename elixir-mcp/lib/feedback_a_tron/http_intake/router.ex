@@ -83,14 +83,8 @@ defmodule FeedbackATron.HTTPIntake.Router do
             |> put_opt(:limit, params["limit"])
             |> put_opt(:include_templates, params["include_templates"])
 
-          case Research.research(request, opts) do
-            {:ok, result} ->
-              send_json(conn, 200, result)
-
-            {:error, reason} ->
-              Logger.error("HTTP research_feedback failed: #{inspect(reason)}")
-              send_json(conn, 502, %{error: "research_failed", detail: inspect(reason)})
-          end
+          {:ok, result} = Research.research(request, opts)
+          send_json(conn, 200, result)
 
         missing ->
           send_json(conn, 400, %{error: "missing_required_fields", fields: missing})
