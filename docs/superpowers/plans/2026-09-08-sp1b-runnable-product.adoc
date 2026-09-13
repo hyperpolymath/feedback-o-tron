@@ -1,0 +1,5151 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= SP1b "Runnable: product" — Implementation Plan
+:toc: macro
+:toclevels: 2
+:source-highlighter: rouge
+
+____
+*For agentic workers:* REQUIRED SUB-SKILL: use `superpowers:subagent-driven-development`
+(recommended) or `superpowers:executing-plans` to implement this plan task by
+task. Steps use checkbox (`* [ ]`) syntax for tracking. This document is a plan;
+nothing in it has been implemented.
+____
+
+*Goal:* one `feedback-o-tron serve` process hosts the existing stdio MCP
+server, the HTTP intake and the engine; the CLI is honest (real exit codes, a
+confirm prompt before anything leaves the machine); the repository's
+manifests, task runner and documents describe the Elixir/OTP product that
+exists; a stranger following the README files one useful GitHub issue.
+
+*Architecture:* the OTP application keeps its core children and gains a pure
+`FeedbackATron.Doors` module that decides, from application env first and OS
+env second, which doors to open (MCP on stdio, HTTP intake on
+`127.0.0.1:7722`). The escript no longer auto-starts the application; the CLI
+sets the door configuration and starts it, so `serve` and the deprecated
+`--mcp-server` are the same code path with no double start. The MCP server
+takes injectable IO devices so its stdio loop is unit-tested with `StringIO`,
+and it stops the VM at EOF so a dead host never leaves an orphan. Logger
+output goes to stderr by configuration, keeping stdout a pure JSON-RPC wire.
+Everything else in this plan is the repository catching up with that product:
+manifests, Justfile, CI, README, install guide.
+
+*Tech Stack:* Elixir `~> 1.15` (measured on 1.19.5 / OTP 27; CI adds that
+cell to the 1.15–1.17 / OTP 26 matrix), Mix escript, Bandit + Plug (HTTP
+intake), `elixir_mcp_server` protocol codec, ExUnit with `StringIO` and
+`ExUnit.CaptureIO`, `gh` CLI for credentials, `just`, Podman/Wolfi, Guix.
+
+*Spec:* `docs/superpowers/specs/2026-09-07-fot-everywhere-design.adoc`
+(sections <<Principles>>, <<Architecture>>, <<Install and distribution>>,
+<<Standards>>, <<Decomposition and build order>>, <<Rulings>>). Executors read
+both documents.
+
+toc::[]
+
+== Global Constraints
+
+Copied verbatim from the spec and the owner's rulings. Every task's
+requirements include this section.
+
+* *SP1b is done when* (spec, decomposition table): "`fot serve` hosts the
+  *existing* stdio MCP server, the HTTP intake and the engine in one OS
+  process, started on demand by the CLI; the Deno remnants in this repo
+  removed; the manifests declare Elixir/OTP; a stranger files one useful
+  report by following the README (test: a fresh machine, the README only, one
+  GitHub issue lands)."
+* *Naming* (spec, install section): "`feedback-o-tron` is the canonical
+  command and cartridge name, spelled `o-tron` on every surface; `fot`
+  survives only as a typing alias … The `a-tron` spelling is retired from
+  every user-facing surface (escript name, help text, catalogue entry); the
+  internal Elixir namespace `FeedbackATron` is renamed in a mechanical
+  follow-up after SP1b." So: this plan renames the escript, the help text,
+  the MCP `serverInfo.name`, the health endpoint's `service` field and every
+  document, and leaves `FeedbackATron.*`, `:feedback_a_tron` and the
+  `feedback_a_tron` release name alone.
+* *Core* (spec, architecture): "Runs as *one* OS process (`fot serve`) that
+  hosts the intake, the MCP transport and the engine — the 7700/7722
+  two-daemon dance ends." Port 7700 belongs to the external `boj-server`;
+  this plan does not touch it.
+* *Doors* (spec, architecture): "Thin adapters. Each door is < 300 lines and
+  owns no policy."
+* *P1:* "The minimum is real. Tier 0 must work with no model, no account and
+  no network beyond the destination itself, and must queue offline." (The
+  offline queue is SP2; SP1b must not add a model or account requirement.)
+* *P3:* "Ledger before wire. Nothing leaves the machine until the privacy
+  ledger for that report has been shown once and acknowledged; after that,
+  the user's standing preferences make it quiet." The ledger is SP3. *Working
+  assumption (a), pending the owner's ruling recorded in the PR:* until SP3
+  lands, a real send from the *CLI* prints the whole payload and requires a
+  person to type `y` at a terminal; no `--yes` flag; a non-terminal stdin is
+  a no. The MCP and HTTP doors do not prompt (their callers are hosts that
+  show the report to their user). If the ruling picks another option, Task 7
+  changes and the rest of this plan stands.
+* *P7:* "One identity, many doors. The engine, the contract and the policy
+  are one thing; CLI, TUI, MCP, HTTP, C ABI and BoJ are doors onto it."
+* *Owner privacy rule (2026-09-07, verbatim):* "I do not want anything snet
+  ever that might be, e.g. my detailed build number or mac/ip address even if
+  that's part of useful feedback (or whatever it might be that the user
+  prefers)". SP1b sends only what the caller typed (repository, title, body,
+  labels, and for Bugzilla the component and version flags); no task in this
+  plan may add host, build, network or environment details to a payload, and
+  the confirm prompt shows the full payload so the person can see that.
+* *Install* (spec): "one release artefact per platform — an OTP release
+  wrapped as a single executable — published on GitHub Releases and ghcr …
+  with `mise` and Guix (`guix.scm` exists) as package routes. No Deno, no npm,
+  no `curl | sh`." and "`fot serve` is the only daemon, and the CLI starts it
+  on demand." Release publishing is SP2; SP1b makes the artefact buildable
+  (escript, `mix release`, Containerfile) and the routes truthful.
+* *Standards* (spec): "AsciiDoc everywhere; no Markdown left in the tree
+  except tool-mandated instruction files (`CLAUDE.md`, `AGENTS.md`,
+  `GEMINI.md`), which keep their names." "Bun is the only JavaScript runtime
+  touched in new work; no Deno, npm or TypeScript." "Guix, not Nix; SPDX
+  headers; rsr-template canonical files present and in sync". A `Makefile` is
+  a banned file (`contractile.just`, `must-no-banned-files`).
+* *YAGNI* (spec): "No accounts or hosted relay; no analytics …; no auto-send
+  that skips the ledger".
+* *Version rule:* `elixir-mcp/mix.exs` `@version "1.0.0"` is canonical. Every
+  manifest that carries a version (`stapeln.toml`, `guix.scm`, STATE.a2ml,
+  the groove manifest) says `1.0.0` after this plan. The tag `v1.0.0` exists.
+* *Install routes, in order* (advisor-accepted 2026-09-08): distribution
+  packages first (`dnf`, `apt`, `brew`, Wolfi `apk`); `mise install` only
+  "if you already use mise"; never `curl | sh`, never `asdf … (recommended)`.
+  `gh` is a hard prerequisite for the GitHub route.
+* *Ports:* the HTTP intake stays on `127.0.0.1:7722` by default. Tests that
+  need a port ask the OS for a free one; no 8080-class ports anywhere.
+* *Estate rules for every file touched:* SPDX header on every new file
+  (`# SPDX-License-Identifier: MPL-2.0` + `# Copyright (c) Jonathan D.A.
+  Jewell <j.d.a.jewell@open.ac.uk>` for code and manifests; `//
+  SPDX-License-Identifier: CC-BY-SA-4.0` for AsciiDoc). Commits are signed
+  (the repository config already has `commit.gpgsign=true`, `gpg.format=ssh`;
+  `git commit` signs without flags). Every commit message ends with the
+  co-author trailer your own harness supplies, alone in its final paragraph
+  — whatever model is actually executing this plan, not the one that wrote
+  it. The commit blocks below stop before that trailer for the same reason:
+  a plan that names a model bakes in a claim that is false the moment
+  somebody else runs it. The PR body ends with `🤖 Generated with
+  [Claude Code](https://claude.com/claude-code)`. The owner merges; the
+  executor never merges.
+* *Honesty rule for this plan:* a step says `Expected: PASS (rehearsed)` only
+  where that exact command was run on 2026-09-08 with the change applied and
+  seen to pass on Elixir 1.19.5 / OTP 27 (main `58bed55`). Every other
+  expectation says `not rehearsed`; when such a step fails, fix the code the
+  step wrote, never the test, and record the divergence in the PR body.
+
+=== Before Task 1: branch and toolchain
+
+* [ ] *Step 0.1: Branch off `origin/main`.*
+
+[source,bash]
+----
+cd /path/to/feedback-o-tron
+git fetch origin
+git switch -c feat/sp1b-runnable-product origin/main
+git log --oneline -1          # expect: 58bed55 fix(ci): pin all five standards reusables … (#88), or newer
+----
+
+* [ ] *Step 0.2: Put Elixir 1.19.5 / OTP 27 on PATH.* On the owner's host
+`mise exec` refuses the checkout until Task 12 replaces `mise.toml`
+("Config files … are not trusted"), so use the installed toolchain directly:
+
+[source,bash]
+----
+export PATH=/home/hyperpolymath/developer/tools/opt/mise/installs/elixir/1.19.5-otp-27/bin:/home/hyperpolymath/developer/tools/opt/mise/installs/erlang/27.0/bin:$PATH
+elixir --version | tail -1    # expect: Elixir 1.19.5 (compiled with Erlang/OTP 27)
+cd elixir-mcp && mix deps.get
+----
+
+Every `mix` command below runs inside `elixir-mcp/`. `mix test` implies
+`MIX_ENV=test`; commands that say `MIX_ENV=prod` mean it.
+
+* [ ] *Step 0.3: Confirm the starting defects you are about to fix.*
+
+[source,bash]
+----
+mix compile --force --warnings-as-errors      # expect: FAILS, two "clause will never match" warnings (Task 2)
+mix test test/rate_limiter_test.exs test/submitter_test.exs --seed 3   # expect: 18 tests, 4 failures (Task 1)
+mix test                                      # expect: 272 tests, 0 failures on most seeds
+cd .. && just --summary; echo "rc=$?"         # expect: rc=1, "unknown start of token '-'" at Justfile:88 (Task 11)
+----
+
+== File map
+
+[cols="3,2,5",options="header"]
+|===
+| Path | Action | Responsibility after this plan
+
+| `elixir-mcp/test/submitter_test.exs` | modify | Owns its rate-limiter state (Task 1)
+| `elixir-mcp/lib/feedback_a_tron/mcp/tools/research_feedback.ex` | modify | No dead `{:error, _}` clause (Task 2)
+| `elixir-mcp/lib/feedback_a_tron/http_intake/router.ex` | modify | No dead 502 branch; `service: "feedback-o-tron"` (Tasks 2, 9)
+| `elixir-mcp/config/config.exs` | create | Logger to stderr, embedded in the escript (Task 3)
+| `elixir-mcp/config/.gitkeep` | delete | Replaced by a real config (Task 3)
+| `elixir-mcp/test/test_helper.exs` | modify | Excludes `:escript` tests by default (Task 3)
+| `elixir-mcp/test/logger_config_test.exs` | create | Proves the handler is on stderr (Task 3)
+| `elixir-mcp/lib/feedback_a_tron/doors.ex` | create | Pure door decision + child specs + port probe (Task 4)
+| `elixir-mcp/test/doors_test.exs` | create | Door decision tests (Task 4)
+| `elixir-mcp/lib/feedback_a_tron/application.ex` | modify | Core children + `Doors.children/1`; no argv sniffing (Task 4)
+| `elixir-mcp/lib/feedback_a_tron/mcp/server.ex` | modify | Injectable stdio devices, `on_eof` (Task 5)
+| `elixir-mcp/test/mcp_server_stdio_test.exs` | create | Stdio loop through `StringIO` (Task 5)
+| `elixir-mcp/lib/feedback_a_tron/cli.ex` | modify | `serve`, `run/2` seam, exit codes, confirm gate (Tasks 6, 7)
+| `elixir-mcp/test/cli_test.exs` | rewrite | Real CLI tests through `run/2` (Tasks 6, 7)
+| `elixir-mcp/lib/feedback_a_tron/credentials.ex` | modify | `gh auth token` fallback (Task 8)
+| `elixir-mcp/test/credentials_test.exs` | modify | Fallback tests with a fake command (Task 8)
+| `elixir-mcp/mix.exs` | modify | escript `feedback-o-tron`, `app: nil`, o-tron URL, honest docs config (Task 9)
+| `elixir-mcp/feedback-a-tron`, `elixir-mcp/lib/rescript.lock`, `examples/web-project-deno.json` | delete | Tracked artefacts and the Deno remnant (Task 9)
+| `.gitignore` | modify | Ignore built escripts (Task 9)
+| `elixir-mcp/test/escript_smoke_test.exs` | create | End-to-end tests of the built binary, tag `:escript` (Task 10)
+| `Justfile`, `tasks/Justfile`, `.machine_readable/contractiles/Justfile` | rewrite / modify | Real `build`/`test`/`fmt`/`lint`/`smoke`/`serve`/`install`/`doctor` recipes (Task 11)
+| `mise.toml`, `guix.scm` | rewrite | Elixir/OTP toolchain routes (Task 12)
+| `packaging/guix/packages.scm` | delete | Placeholder-hash channel file (Task 12)
+| `packaging/Containerfile`, `stapeln.toml` | rewrite | OTP release image, HTTP intake only (Task 13)
+| `.well-known/humans.txt`, `.machine_readable/6a2/STATE.a2ml`, `.well-known/groove/manifest.json`, `elixir-mcp/ARCHITECTURE.adoc` | modify | Truthful metadata; Nix block replaced by the Guix route (Task 14)
+| `.github/workflows/elixir-ci.yml` | modify | 1.19/27 cell; escript smoke step (Task 15)
+| `README.adoc` | modify | Quick starts, `serve` section, stanza args, troubleshooting (Task 16)
+| `docs/AI_INSTALLATION_GUIDE.adoc` | modify | Prerequisites, `gh` route, stanza, exact expected output (Task 17)
+| `elixir-mcp/README.adoc` | rewrite | Describes this engine, not Observatory (Task 18)
+| `elixir-mcp/scripts/mcp_tcp_smoke_test.sh` | modify | Port 7979, `mktemp` payload (Task 18)
+|===
+
+== Task 1: Test isolation — submitter tests own their rate-limiter state
+
+*Files:*
+
+* Modify: `elixir-mcp/test/submitter_test.exs:13-32` (the `setup` block)
+
+*Interfaces:*
+
+* Consumes: `FeedbackATron.RateLimiter.start_link/1`, `reset/1` (existing).
+* Produces: a suite that passes on every seed; Tasks 6 and 7 copy this
+  setup into `test/cli_test.exs`.
+
+*Why:* `rate_limiter_test.exs` (`async: false`) exercises `acquire/1`, which
+leaves a 2 s GitHub cooldown in the global `RateLimiter`. When the seed runs
+it just before `submitter_test.exs`, four submitter tests get
+`{:error, %RateLimitError{platform: :github, …}}` instead of `{:ok, %{status:
+:dry_run}}`. The fix is the same start-if-missing plus reset pattern the rate
+limiter test already uses.
+
+* [ ] *Step 1.1: Reproduce the failure deterministically.*
+
+[source,bash]
+----
+mix test test/rate_limiter_test.exs test/submitter_test.exs --seed 3
+----
+
+Expected: `18 tests, 4 failures` (rehearsed), each failure of the form
+`right: {:error, %FeedbackATron.Error.RateLimitError{platform: :github, …}}`
+at `test/submitter_test.exs:45` and three sibling assertions.
+
+* [ ] *Step 1.2: Extend the setup block.* In `test/submitter_test.exs`
+replace the tail of `setup do`:
+
+[source,elixir]
+----
+    :ok = FeedbackATron.Deduplicator.clear()
+    :ok
+  end
+----
+
+with:
+
+[source,elixir]
+----
+    case Process.whereis(FeedbackATron.RateLimiter) do
+      nil -> FeedbackATron.RateLimiter.start_link([])
+      _pid -> :ok
+    end
+
+    # The rate limiter is global state shared with rate_limiter_test.exs,
+    # whose acquire/1 tests leave a 2 s GitHub cooldown behind them.
+    for platform <- [:github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email] do
+      FeedbackATron.RateLimiter.reset(platform)
+    end
+
+    :ok = FeedbackATron.Deduplicator.clear()
+    :ok
+  end
+----
+
+* [ ] *Step 1.3: Verify on the failing seed and under repetition.*
+
+[source,bash]
+----
+mix test test/rate_limiter_test.exs test/submitter_test.exs --seed 3
+mix test test/rate_limiter_test.exs test/submitter_test.exs --repeat-until-failure 40
+mix test --seed 3
+mix format --check-formatted
+----
+
+Expected: `18 tests, 0 failures` (rehearsed); the repeat run reports
+`0 failures` (rehearsed); the full suite `272 tests, 0 failures` (rehearsed);
+the format check prints nothing and exits 0.
+
+* [ ] *Step 1.4: Commit.*
+
+[source,bash]
+----
+git add test/submitter_test.exs
+git commit -F - <<'MSG'
+test(submitter): reset the global rate limiter in setup
+
+rate_limiter_test.exs leaves a GitHub cooldown behind; on seeds that run it
+first, four submitter tests saw RateLimitError instead of :dry_run.
+Reproduce with: mix test test/rate_limiter_test.exs test/submitter_test.exs --seed 3
+MSG
+----
+
+== Task 2: Compile clean under `--warnings-as-errors`
+
+*Files:*
+
+* Modify: `elixir-mcp/lib/feedback_a_tron/mcp/tools/research_feedback.ex:80-87`
+* Modify: `elixir-mcp/lib/feedback_a_tron/http_intake/router.ex:86-93`
+
+*Interfaces:*
+
+* Consumes: `FeedbackATron.Synthesis.Research.research/2`, whose only return
+  shape is `{:ok, map}` (the 1.19 type checker proves this: "the following
+  clause will never match: {:error, reason}").
+* Produces: a tree that compiles with `--warnings-as-errors` on 1.19, which
+  Task 15's CI cell requires.
+
+* [ ] *Step 2.1: See the two warnings.*
+
+[source,bash]
+----
+mix compile --force --warnings-as-errors; echo "rc=$?"
+----
+
+Expected: `rc=1`, two "the following clause will never match: {:error,
+reason}" warnings, at `research_feedback.ex:84` and at
+`FeedbackATron.HTTPIntake.Router.do_match/4` (the router's research route).
+
+* [ ] *Step 2.2: Delete the dead clauses.* In `research_feedback.ex` replace:
+
+[source,elixir]
+----
+    case Research.research(request, opts) do
+      {:ok, result} ->
+        {:ok, [%{type: "text", text: Jason.encode!(result)}]}
+
+      {:error, reason} ->
+        Logger.error("MCP research_feedback failed: #{inspect(reason)}")
+        {:error, reason}
+    end
+----
+
+with:
+
+[source,elixir]
+----
+    {:ok, result} = Research.research(request, opts)
+    {:ok, [%{type: "text", text: Jason.encode!(result)}]}
+----
+
+In `router.ex` replace:
+
+[source,elixir]
+----
+    case Research.research(request, opts) do
+      {:ok, result} ->
+        send_json(conn, 200, result)
+
+      {:error, reason} ->
+        Logger.error("HTTP research_feedback failed: #{inspect(reason)}")
+        send_json(conn, 502, %{error: "research_failed", detail: inspect(reason)})
+    end
+----
+
+with:
+
+[source,elixir]
+----
+    {:ok, result} = Research.research(request, opts)
+    send_json(conn, 200, result)
+----
+
+If either file then has an unused `require Logger`, the compiler says so;
+leave `require Logger` in place when the module still logs elsewhere (both
+do), otherwise remove it.
+
+* [ ] *Step 2.3: Verify.*
+
+[source,bash]
+----
+mix compile --force --warnings-as-errors; echo "rc=$?"
+mix format --check-formatted; echo "rc=$?"
+mix test
+----
+
+Expected: both `rc=0` (rehearsed); `272 tests, 0 failures` (rehearsed).
+
+* [ ] *Step 2.4: Commit.*
+
+[source,bash]
+----
+git add lib/feedback_a_tron/mcp/tools/research_feedback.ex lib/feedback_a_tron/http_intake/router.ex
+git commit -F - <<'MSG'
+fix: drop unreachable {:error, _} clauses after Research.research/2
+
+Research.research/2 only returns {:ok, map}; Elixir 1.19's type checker
+rejects the dead clauses under --warnings-as-errors.
+MSG
+----
+
+== Task 3: Logger to stderr; `:escript` test tag
+
+*Files:*
+
+* Create: `elixir-mcp/config/config.exs`
+* Delete: `elixir-mcp/config/.gitkeep`
+* Modify: `elixir-mcp/test/test_helper.exs`
+* Create: `elixir-mcp/test/logger_config_test.exs`
+
+*Interfaces:*
+
+* Produces: stdout is reserved for the MCP JSON-RPC wire in every mode
+  (Task 5's stdio loop and Task 10's smoke test rely on it); the tag
+  `:escript` marks tests that need the built binary (Task 10 uses it; Task 11
+  and Task 15 run `mix test --only escript`).
+
+*Why:* Elixir's default logger handler writes to `:standard_io`. An MCP host
+reads stdout as JSON-RPC, so one `Logger.info` line breaks the session. A
+`config/config.exs` is compiled into the escript (`mix escript.build` embeds
+the config), so the fix travels with the binary. Rehearsed: with this config
+and Task 9's `app: nil`, the handler is `:standard_io` until the application
+starts and `:standard_error` after `Application.ensure_all_started`.
+
+* [ ] *Step 3.1: Write the failing test.*
+
+[source,elixir]
+----
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+defmodule FeedbackATron.LoggerConfigTest do
+  use ExUnit.Case, async: true
+
+  @moduledoc """
+  stdout is the MCP JSON-RPC wire; every log line must go to stderr.
+  """
+
+  test "the default logger handler writes to standard_error" do
+    {:ok, %{config: config}} = :logger.get_handler_config(:default)
+    assert config.type == :standard_error
+  end
+end
+----
+
+Save as `test/logger_config_test.exs`.
+
+* [ ] *Step 3.2: Run it and watch it fail.*
+
+[source,bash]
+----
+mix test test/logger_config_test.exs
+----
+
+Expected: `1 test, 1 failure`, `left: :standard_io` (not rehearsed in the
+failing direction; the passing direction is rehearsed).
+
+* [ ] *Step 3.3: Create the config.*
+
+[source,elixir]
+----
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+import Config
+
+# stdout is the MCP JSON-RPC wire when `feedback-o-tron serve` runs under a
+# host; every log line goes to stderr so the wire stays clean.
+config :logger, :default_handler, config: [type: :standard_error]
+----
+
+Save as `config/config.exs`, then `git rm config/.gitkeep`.
+
+* [ ] *Step 3.4: Exclude `:escript` tests by default.* Replace the body of
+`test/test_helper.exs` (keep its two SPDX lines) so it reads:
+
+[source,elixir]
+----
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+# Tests tagged :escript need a built binary (mix escript.build); run them
+# with `mix test --only escript`.
+ExUnit.start(exclude: [:escript])
+----
+
+* [ ] *Step 3.5: Verify.*
+
+[source,bash]
+----
+mix test test/logger_config_test.exs
+mix test
+mix format --check-formatted; echo "rc=$?"
+----
+
+Expected: `1 test, 0 failures` (rehearsed); the full suite `273 tests, 0
+failures` (272 rehearsed plus this one); `rc=0`.
+
+* [ ] *Step 3.6: Commit.*
+
+[source,bash]
+----
+git add config/config.exs config/.gitkeep test/test_helper.exs test/logger_config_test.exs
+git commit -F - <<'MSG'
+fix(logger): send every log line to stderr; add the :escript test tag
+
+stdout is the MCP JSON-RPC wire. The config is embedded in the escript so
+the binary carries it. :escript-tagged tests need a built binary and run
+only with `mix test --only escript`.
+MSG
+----
+
+== Task 4: `FeedbackATron.Doors` — one place decides which doors open
+
+*Files:*
+
+* Create: `elixir-mcp/lib/feedback_a_tron/doors.ex`
+* Create: `elixir-mcp/test/doors_test.exs`
+* Modify: `elixir-mcp/lib/feedback_a_tron/application.ex:21-77` (the
+  `start/2` children list, `maybe_add_http_intake/1`, `maybe_add_mcp_server/1`)
+  and `:92-138` (`mcp_enabled?/0`, `http_intake_enabled?/0`,
+  `http_intake_port/0`, `http_intake_ip/0`)
+
+*Interfaces:*
+
+* Consumes: `FeedbackATron.MCP.Server` child spec (`start_link/1` with
+  `name:`, `version:`, `tools:`); `FeedbackATron.HTTPIntake.Router`; Bandit.
+* Produces (Task 6 and Task 13 rely on these exact names):
+** `FeedbackATron.Doors.config(app_env :: keyword(), sys_env :: %{String.t() => String.t()}) :: %{mcp_stdio: boolean(), http: boolean(), http_port: 1..65535, http_ip: :inet.ip_address()}`
+** `FeedbackATron.Doors.children(config :: map()) :: [Supervisor.child_spec() | {module(), term()}]`
+** Application env key `:doors` under `:feedback_a_tron`, a keyword list with
+   any of `:mcp_stdio`, `:http`, `:http_port`, `:http_ip`. Application env
+   beats OS env; OS env beats the defaults (both doors closed).
+** OS env names, new spelling first, legacy second; the first *present* name
+   decides: `FEEDBACK_O_TRON_MCP` / `FEEDBACK_A_TRON_MCP` / `MCP_SERVER`;
+   `FEEDBACK_O_TRON_HTTP` / `FEEDBACK_A_TRON_HTTP`;
+   `FEEDBACK_O_TRON_HTTP_PORT` / `FEEDBACK_A_TRON_HTTP_PORT`;
+   `FEEDBACK_O_TRON_HTTP_BIND` / `FEEDBACK_A_TRON_HTTP_BIND`.
+
+*Why:* today `Application.start/2` sniffs `System.argv()` for
+`--mcp-server`, and `CLI.main/1` *also* calls `MCP.Server.start_link/1`, so
+the escript starts the MCP server twice (the second `start_link` returns
+`{:error, {:already_started, _}}`, silently). With Task 9's `app: nil` the
+application no longer starts before `main/1`, so the CLI can set the door
+configuration first and start the application once. Putting the decision in
+a pure function makes it testable without touching real env.
+
+* [ ] *Step 4.1: Write the failing tests.*
+
+[source,elixir]
+----
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+defmodule FeedbackATron.DoorsTest do
+  use ExUnit.Case, async: true
+
+  alias FeedbackATron.Doors
+
+  describe "config/2 defaults" do
+    test "both doors closed, loopback 7722" do
+      assert Doors.config([], %{}) == %{
+               mcp_stdio: false,
+               http: false,
+               http_port: 7722,
+               http_ip: {127, 0, 0, 1}
+             }
+    end
+  end
+
+  describe "config/2 precedence" do
+    test "application env beats OS env" do
+      sys = %{"FEEDBACK_O_TRON_MCP" => "1", "FEEDBACK_O_TRON_HTTP_PORT" => "9999"}
+
+      assert %{mcp_stdio: false, http_port: 8123} =
+               Doors.config([mcp_stdio: false, http_port: 8123], sys)
+    end
+
+    test "new env names open doors" do
+      sys = %{"FEEDBACK_O_TRON_MCP" => "yes", "FEEDBACK_O_TRON_HTTP" => "on"}
+      assert %{mcp_stdio: true, http: true} = Doors.config([], sys)
+    end
+
+    test "legacy env names still work" do
+      sys = %{"FEEDBACK_A_TRON_MCP" => "true", "FEEDBACK_A_TRON_HTTP" => "1"}
+      assert %{mcp_stdio: true, http: true} = Doors.config([], sys)
+    end
+
+    test "MCP_SERVER is the oldest spelling and still works" do
+      assert %{mcp_stdio: true} = Doors.config([], %{"MCP_SERVER" => "1"})
+    end
+
+    test "the first present name decides: a new-name 0 beats a legacy 1" do
+      sys = %{"FEEDBACK_O_TRON_MCP" => "0", "FEEDBACK_A_TRON_MCP" => "1"}
+      assert %{mcp_stdio: false} = Doors.config([], sys)
+    end
+
+    test "values are trimmed and case-insensitive" do
+      assert %{http: true} = Doors.config([], %{"FEEDBACK_O_TRON_HTTP" => " TRUE\n"})
+      assert %{http: false} = Doors.config([], %{"FEEDBACK_O_TRON_HTTP" => "maybe"})
+    end
+  end
+
+  describe "config/2 port and bind" do
+    test "port and bind come from env" do
+      sys = %{"FEEDBACK_O_TRON_HTTP_PORT" => "8123", "FEEDBACK_O_TRON_HTTP_BIND" => "0.0.0.0"}
+      assert %{http_port: 8123, http_ip: {0, 0, 0, 0}} = Doors.config([], sys)
+    end
+
+    test "legacy port and bind names work" do
+      sys = %{"FEEDBACK_A_TRON_HTTP_PORT" => "8124", "FEEDBACK_A_TRON_HTTP_BIND" => "::1"}
+      assert %{http_port: 8124, http_ip: {0, 0, 0, 0, 0, 0, 0, 1}} = Doors.config([], sys)
+    end
+
+    test "a bad port or bind falls back to the default" do
+      sys = %{"FEEDBACK_O_TRON_HTTP_PORT" => "seventy", "FEEDBACK_O_TRON_HTTP_BIND" => "nowhere"}
+      assert %{http_port: 7722, http_ip: {127, 0, 0, 1}} = Doors.config([], sys)
+      assert %{http_port: 7722} = Doors.config([], %{"FEEDBACK_O_TRON_HTTP_PORT" => "0"})
+      assert %{http_port: 7722} = Doors.config([], %{"FEEDBACK_O_TRON_HTTP_PORT" => "70000"})
+    end
+
+    test "application env accepts an ip tuple" do
+      assert %{http_ip: {0, 0, 0, 0}} = Doors.config([http_ip: {0, 0, 0, 0}], %{})
+    end
+  end
+
+  describe "children/1" do
+    test "no children when both doors are closed" do
+      assert Doors.children(Doors.config([], %{})) == []
+    end
+
+    test "the MCP child is the stdio server named feedback-o-tron" do
+      [{FeedbackATron.MCP.Server, opts}] = Doors.children(Doors.config([mcp_stdio: true], %{}))
+      assert opts[:name] == "feedback-o-tron"
+      assert is_binary(opts[:version])
+
+      assert opts[:tools] == [
+               FeedbackATron.MCP.Tools.SubmitFeedback,
+               FeedbackATron.MCP.Tools.ResearchFeedback,
+               FeedbackATron.MCP.Tools.SynthesizeFeedback
+             ]
+    end
+
+    test "the HTTP child is Bandit on the configured ip and port" do
+      {:ok, probe} = :gen_tcp.listen(0, ip: {127, 0, 0, 1})
+      {:ok, port} = :inet.port(probe)
+      :ok = :gen_tcp.close(probe)
+
+      config = Doors.config([http: true, http_port: port, http_ip: {127, 0, 0, 1}], %{})
+      [{Bandit, opts}] = Doors.children(config)
+      assert opts[:plug] == FeedbackATron.HTTPIntake.Router
+      assert opts[:scheme] == :http
+      assert opts[:ip] == {127, 0, 0, 1}
+      assert opts[:port] == port
+    end
+
+    test "the HTTP child is skipped while another socket owns the port" do
+      {:ok, holder} = :gen_tcp.listen(0, ip: {127, 0, 0, 1}, reuseaddr: true)
+      {:ok, port} = :inet.port(holder)
+      config = Doors.config([http: true, http_port: port, http_ip: {127, 0, 0, 1}], %{})
+
+      assert Doors.children(config) == []
+
+      :ok = :gen_tcp.close(holder)
+      assert [{Bandit, _}] = Doors.children(config)
+    end
+  end
+end
+----
+
+Save as `test/doors_test.exs`.
+
+* [ ] *Step 4.2: Run it and watch it fail.*
+
+[source,bash]
+----
+mix test test/doors_test.exs
+----
+
+Expected: compilation error or `** (UndefinedFunctionError) function
+FeedbackATron.Doors.config/2 is undefined` (not rehearsed).
+
+* [ ] *Step 4.3: Write the module.*
+
+[source,elixir]
+----
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+defmodule FeedbackATron.Doors do
+  @moduledoc """
+  Decides which doors the engine opens, and builds their child specs.
+
+  The engine, the contract and the policy are one thing; the MCP stdio
+  server and the HTTP intake are doors onto it. `config/2` is pure: it takes
+  the `:doors` application env and the OS environment as a map, so it is
+  unit-tested without touching either. Application env beats OS env; OS env
+  beats the defaults; both doors are closed by default.
+
+  OS env names are read new spelling first, legacy second; the first name
+  that is *present* decides.
+  """
+
+  require Logger
+
+  @default_port 7722
+  @default_ip {127, 0, 0, 1}
+
+  @mcp_names ["FEEDBACK_O_TRON_MCP", "FEEDBACK_A_TRON_MCP", "MCP_SERVER"]
+  @http_names ["FEEDBACK_O_TRON_HTTP", "FEEDBACK_A_TRON_HTTP"]
+  @port_names ["FEEDBACK_O_TRON_HTTP_PORT", "FEEDBACK_A_TRON_HTTP_PORT"]
+  @bind_names ["FEEDBACK_O_TRON_HTTP_BIND", "FEEDBACK_A_TRON_HTTP_BIND"]
+
+  @tools [
+    FeedbackATron.MCP.Tools.SubmitFeedback,
+    FeedbackATron.MCP.Tools.ResearchFeedback,
+    FeedbackATron.MCP.Tools.SynthesizeFeedback
+  ]
+
+  @type config :: %{
+          mcp_stdio: boolean(),
+          http: boolean(),
+          http_port: 1..65535,
+          http_ip: :inet.ip_address()
+        }
+
+  @spec config(keyword(), %{optional(String.t()) => String.t()}) :: config()
+  def config(app_env, sys_env) when is_list(app_env) and is_map(sys_env) do
+    %{
+      mcp_stdio: pick(app_env, :mcp_stdio, on?(first_present(sys_env, @mcp_names))),
+      http: pick(app_env, :http, on?(first_present(sys_env, @http_names))),
+      http_port: pick(app_env, :http_port, parse_port(first_present(sys_env, @port_names))),
+      http_ip: pick(app_env, :http_ip, parse_ip(first_present(sys_env, @bind_names)))
+    }
+  end
+
+  @spec children(config()) :: [{module(), keyword()}]
+  def children(%{} = config) do
+    mcp_children(config) ++ http_children(config)
+  end
+
+  defp mcp_children(%{mcp_stdio: true}) do
+    [
+      {FeedbackATron.MCP.Server,
+       name: "feedback-o-tron",
+       version: Application.spec(:feedback_a_tron, :vsn) |> to_string(),
+       tools: @tools}
+    ]
+  end
+
+  defp mcp_children(_), do: []
+
+  defp http_children(%{http: true, http_ip: ip, http_port: port}) do
+    if port_free?(ip, port) do
+      [{Bandit, plug: FeedbackATron.HTTPIntake.Router, scheme: :http, ip: ip, port: port}]
+    else
+      Logger.warning(
+        "HTTP intake not started: #{:inet.ntoa(ip)}:#{port} is already in use; " <>
+          "another feedback-o-tron serve may own it"
+      )
+
+      []
+    end
+  end
+
+  defp http_children(_), do: []
+
+  defp port_free?(ip, port) do
+    case :gen_tcp.listen(port, ip: ip, reuseaddr: true) do
+      {:ok, socket} ->
+        :ok = :gen_tcp.close(socket)
+        true
+
+      {:error, _} ->
+        false
+    end
+  end
+
+  defp pick(app_env, key, fallback) do
+    case Keyword.fetch(app_env, key) do
+      {:ok, value} -> value
+      :error -> fallback
+    end
+  end
+
+  defp first_present(sys_env, names) do
+    Enum.find_value(names, fn name -> Map.get(sys_env, name) end)
+  end
+
+  defp on?(nil), do: false
+
+  defp on?(value) when is_binary(value) do
+    String.downcase(String.trim(value)) in ["1", "true", "yes", "on"]
+  end
+
+  defp parse_port(nil), do: @default_port
+
+  defp parse_port(value) do
+    case Integer.parse(String.trim(value)) do
+      {port, ""} when port in 1..65535 -> port
+      _ -> @default_port
+    end
+  end
+
+  defp parse_ip(nil), do: @default_ip
+
+  defp parse_ip(value) do
+    case :inet.parse_address(String.to_charlist(String.trim(value))) do
+      {:ok, ip} -> ip
+      {:error, _} -> @default_ip
+    end
+  end
+end
+----
+
+Save as `lib/feedback_a_tron/doors.ex`. The `Application.spec/2` call
+returns `nil` before the application is loaded; in the test it is loaded
+because `mix test` starts the app, and in the escript Task 6 calls
+`Application.load/1` before anything reads the version. The `port_free?`
+probe is rehearsed: `:gen_tcp.listen(port, ip: ip, reuseaddr: true)` returns
+`{:error, :eaddrinuse}` while another socket listens on that port and
+`{:ok, _}` after it closes.
+
+* [ ] *Step 4.4: Rewire the application.* In `lib/feedback_a_tron/application.ex`
+replace lines 21–39 (`def start` through `Supervisor.start_link(children,
+opts)`) with:
+
+[source,elixir]
+----
+  @impl true
+  def start(_type, _args) do
+    doors =
+      FeedbackATron.Doors.config(
+        Application.get_env(:feedback_a_tron, :doors, []),
+        System.get_env()
+      )
+
+    children =
+      core_children() ++
+        FeedbackATron.Doors.children(doors) ++
+        migration_observer_children()
+
+    opts = [strategy: :one_for_one, name: FeedbackATron.Supervisor]
+    Supervisor.start_link(children, opts)
+  end
+
+  defp core_children do
+    [
+      FeedbackATron.RateLimiter,
+      FeedbackATron.Submitter,
+      FeedbackATron.Deduplicator,
+      FeedbackATron.AuditLog,
+      FeedbackATron.Synthesis.TemplateCache,
+      # Network verification (optional, can be disabled)
+      {FeedbackATron.NetworkVerifier, enabled: true}
+    ]
+  end
+----
+
+Then delete `maybe_add_http_intake/1`, `maybe_add_mcp_server/1`,
+`mcp_enabled?/0`, `http_intake_enabled?/0`, `http_intake_port/0` and
+`http_intake_ip/0` (lines 42–77 and 92–138). Rename
+`maybe_add_migration_observer(children)` to `migration_observer_children/0`
+returning the list it used to append (its body becomes `if
+migration_observer_enabled?(), do: [ …the same child specs… ], else: []`).
+Keep `env_on?/1` and `migration_observer_enabled?/0` exactly as they are
+(the `--migration-observer` argv gate is out of scope; see "Noticed, not in
+this plan"). Update the `@moduledoc` list to name "Doors: MCP stdio server
+and HTTP intake, opened by `FeedbackATron.Doors` from the `:doors`
+application env or the `FEEDBACK_O_TRON_*` environment".
+
+* [ ] *Step 4.5: Verify.*
+
+[source,bash]
+----
+mix compile --force --warnings-as-errors; echo "rc=$?"
+mix test test/doors_test.exs
+mix test
+mix format --check-formatted; echo "rc=$?"
+grep -n 'System.argv' lib/feedback_a_tron/application.ex
+----
+
+Expected: `rc=0`; `15 tests, 0 failures`; full suite `288 tests, 0
+failures`; `rc=0`; the grep shows exactly one line, inside
+`migration_observer_enabled?/0` (not rehearsed).
+
+* [ ] *Step 4.6: Commit.*
+
+[source,bash]
+----
+git add lib/feedback_a_tron/doors.ex test/doors_test.exs lib/feedback_a_tron/application.ex
+git commit -F - <<'MSG'
+feat(doors): decide MCP/HTTP doors in one pure module; drop argv sniffing
+
+FeedbackATron.Doors.config/2 reads the :doors application env first and the
+FEEDBACK_O_TRON_* (legacy FEEDBACK_A_TRON_*) environment second; both doors
+are closed by default. Application.start no longer inspects System.argv, so
+the CLI is the only place that opens doors and the MCP server is started
+once.
+MSG
+----
+
+== Task 5: MCP server — injectable stdio devices, stop at EOF
+
+*Files:*
+
+* Modify: `elixir-mcp/lib/feedback_a_tron/mcp/server.ex:15` (struct), `:22-42`
+  (`init/1`), `:62-74` (`stdio_loop/1`)
+* Create: `elixir-mcp/test/mcp_server_stdio_test.exs`
+
+*Interfaces:*
+
+* Consumes: `handle_message(line, state, send_fun)` (existing, line 209),
+  which already answers `initialize` and `tools/list`.
+* Produces: `FeedbackATron.MCP.Server.start_link/1` accepts three new
+  options — `stdio_in:` (an IO device, default `:stdio`), `stdio_out:` (an IO
+  device, default `:stdio`), `on_eof:` (a zero-arity function, default stops
+  the VM with exit code 0). Task 10's smoke test relies on the default:
+  "when the host closes stdin, the process exits 0".
+
+*Why:* today `stdio_loop/1` returns `:ok` at `:eof` while `CLI.main/1` sleeps
+forever, so a host that dies leaves a `feedback-o-tron` orphan holding port
+7722. And the loop is untestable because it reads the real `:stdio`.
+Rehearsed: `IO.read(dev, :line)` on a `StringIO` yields each line then
+`:eof`; `IO.puts(out_dev, "x")` on a `StringIO` lands in
+`StringIO.contents/1` as `{"", "x\n"}`.
+
+* [ ] *Step 5.1: Write the failing test.*
+
+[source,elixir]
+----
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+defmodule FeedbackATron.MCP.ServerStdioTest do
+  use ExUnit.Case, async: false
+
+  alias FeedbackATron.MCP.Server
+
+  @initialize ~s({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}})
+  @tools_list ~s({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}})
+
+  test "answers initialize and tools/list on the injected devices, then reports EOF" do
+    parent = self()
+    {:ok, input} = StringIO.open(@initialize <> "\n" <> @tools_list <> "\n")
+    {:ok, output} = StringIO.open("")
+
+    {:ok, pid} =
+      Server.start_link(
+        name: "feedback-o-tron",
+        version: "1.0.0",
+        tools: [FeedbackATron.MCP.Tools.SubmitFeedback],
+        stdio_in: input,
+        stdio_out: output,
+        on_eof: fn -> send(parent, :eof_seen) end
+      )
+
+    assert_receive :eof_seen, 2_000
+
+    {"", written} = StringIO.contents(output)
+
+    [first, second] =
+      written
+      |> String.split("\n", trim: true)
+      |> Enum.map(&Jason.decode!/1)
+
+    assert first["id"] == 1
+    assert first["result"]["protocolVersion"] == "2024-11-05"
+    assert first["result"]["serverInfo"]["name"] == "feedback-o-tron"
+
+    assert second["id"] == 2
+    assert Enum.map(second["result"]["tools"], & &1["name"]) == ["submit_feedback"]
+
+    GenServer.stop(pid)
+  end
+end
+----
+
+Save as `test/mcp_server_stdio_test.exs`.
+
+* [ ] *Step 5.2: Run it and watch it fail.*
+
+[source,bash]
+----
+mix test test/mcp_server_stdio_test.exs
+----
+
+Expected: `1 test, 1 failure` — with the current code the server ignores the
+unknown options, reads the real stdin, and `assert_receive :eof_seen` times
+out after 2 s (not rehearsed).
+
+* [ ] *Step 5.3: Make the devices and the EOF action injectable.* In
+`lib/feedback_a_tron/mcp/server.ex` change the struct line to:
+
+[source,elixir]
+----
+  defstruct [
+    :name,
+    :version,
+    :tools,
+    :resources,
+    :capabilities,
+    :stdio?,
+    :stdio_in,
+    :stdio_out,
+    :on_eof,
+    :tcp
+  ]
+----
+
+In `init/1`, replace:
+
+[source,elixir]
+----
+      stdio?: Keyword.get(opts, :stdio, true),
+      tcp: tcp_config(opts)
+----
+
+with:
+
+[source,elixir]
+----
+      stdio?: Keyword.get(opts, :stdio, true),
+      stdio_in: Keyword.get(opts, :stdio_in, :stdio),
+      stdio_out: Keyword.get(opts, :stdio_out, :stdio),
+      on_eof: Keyword.get(opts, :on_eof, &default_on_eof/0),
+      tcp: tcp_config(opts)
+----
+
+Replace `stdio_loop/1` with:
+
+[source,elixir]
+----
+  defp stdio_loop(state) do
+    case IO.read(state.stdio_in, :line) do
+      :eof ->
+        Logger.info("MCP client closed stdin; stopping")
+        state.on_eof.()
+
+      {:error, reason} ->
+        Logger.error("stdio read error: #{inspect(reason)}; stopping")
+        state.on_eof.()
+
+      line ->
+        handle_message(String.trim(line), state, &IO.puts(state.stdio_out, &1))
+        stdio_loop(state)
+    end
+  end
+
+  # A host that dies must never leave an orphan holding the HTTP port: when
+  # stdin closes, the whole VM stops (exit 0). Tests inject `on_eof:` instead.
+  defp default_on_eof, do: System.stop(0)
+----
+
+Update the `@moduledoc` to say: "The stdio transport reads `stdio_in` and
+writes `stdio_out` (both default to `:stdio`); when the input reaches EOF the
+server calls `on_eof` (default: stop the VM). Every log line goes to stderr
+(see `config/config.exs`)."
+
+* [ ] *Step 5.4: Verify.*
+
+[source,bash]
+----
+mix test test/mcp_server_stdio_test.exs
+mix test
+mix compile --force --warnings-as-errors; echo "rc=$?"
+mix format --check-formatted; echo "rc=$?"
+----
+
+Expected: `1 test, 0 failures`; full suite `289 tests, 0 failures`; both
+`rc=0` (not rehearsed). If `Jason.decode!` fails on the second line, print
+`written` — a stray log line on the wire means Task 3's config is not
+applied in this environment; do not fix by filtering the output.
+
+* [ ] *Step 5.5: Commit.*
+
+[source,bash]
+----
+git add lib/feedback_a_tron/mcp/server.ex test/mcp_server_stdio_test.exs
+git commit -F - <<'MSG'
+feat(mcp): injectable stdio devices; stop the VM when the host closes stdin
+
+The stdio loop reads stdio_in and writes stdio_out (defaults :stdio) so it is
+unit-tested through StringIO. At EOF it calls on_eof, whose default is
+System.stop(0), so a dead host never leaves an orphan holding port 7722.
+MSG
+----
+
+== Task 6: CLI `serve`, the `run/2` seam, real exit codes
+
+*Files:*
+
+* Modify: `elixir-mcp/lib/feedback_a_tron/cli.ex:13-75` (`main/1` and the
+  `parse_args/1` clauses) and `:173-238` (`print_help/0`)
+* Modify: `elixir-mcp/mix.exs:76-78` (`defp escript`)
+* Rewrite: `elixir-mcp/test/cli_test.exs`
+
+*Interfaces:*
+
+* Consumes: `FeedbackATron.Doors` (Task 4) through the `:doors` application
+  env; `FeedbackATron.Submitter.submit/2` returning `{:ok, id, results}` or
+  `{:error, reason}`, where each result is `{:ok, %{platform: atom, url:
+  binary}}`, `{:ok, %{platform: atom, status: :dry_run}}` or `{:error,
+  %{platform: atom, error: term}}`.
+* Produces (Task 7 and Task 10 rely on these):
+** `FeedbackATron.CLI.run(args :: [String.t()], opts :: keyword()) :: {:halt, 0 | 1 | 3} | :running`
+   — `main/1` is now only `System.halt/1` or sleep around it. `opts` accepts
+   `submit:` (a 2-arity function replacing `Submitter.submit/2`); Task 7 adds
+   `confirm:`.
+** `FeedbackATron.CLI.parse_args([String.t()]) :: {:serve, keyword()} | {:submit, map(), keyword()} | {:version} | {:help} | {:error, String.t()}`
+   (public, `@doc false`).
+** Commands: `serve [--no-stdio] [--no-http] [--http-port N]`; `--mcp-server`
+   is the deprecated spelling of `serve` (same doors, a notice on stderr).
+** Exit codes: 0 sent / dry run / help / version; 1 bad arguments, unknown
+   command, or any destination failed; 3 is reserved for Task 7's "not sent".
+
+*Why:* `main/1` calls `System.halt/1` in every branch, so it cannot be
+tested, and its exit code is 0 even when every destination failed. The
+escript's default `app:` starts the application *before* `main/1`, which is
+why `Application.start/2` sniffed argv; with `app: nil` the CLI sets the
+doors and starts the application once (rehearsed: an `app: nil` escript
+runs `--version` without starting the app, and after
+`Application.ensure_all_started/1` the embedded logger config is live and
+`Logger.info` reaches only stderr).
+
+* [ ] *Step 6.1: Write the failing tests.* Replace `test/cli_test.exs`
+wholesale:
+
+[source,elixir]
+----
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+defmodule FeedbackATron.CLITest do
+  use ExUnit.Case, async: false
+
+  import ExUnit.CaptureIO
+
+  alias FeedbackATron.CLI
+
+  setup do
+    for mod <- [
+          FeedbackATron.RateLimiter,
+          FeedbackATron.Submitter,
+          FeedbackATron.Deduplicator,
+          FeedbackATron.AuditLog
+        ] do
+      case Process.whereis(mod) do
+        nil -> mod.start_link([])
+        _pid -> :ok
+      end
+    end
+
+    # Global state shared with rate_limiter_test.exs (see submitter_test.exs).
+    for platform <- [:github, :gitlab, :bitbucket, :codeberg, :bugzilla, :email] do
+      FeedbackATron.RateLimiter.reset(platform)
+    end
+
+    :ok = FeedbackATron.Deduplicator.clear()
+    :ok
+  end
+
+  describe "parse_args/1 serve" do
+    test "serve opens both doors by default" do
+      assert {:serve, doors} = CLI.parse_args(["serve"])
+      assert doors[:mcp_stdio] == true
+      assert doors[:http] == true
+      refute Keyword.has_key?(doors, :http_port)
+    end
+
+    test "serve flags close doors and set the port" do
+      assert {:serve, doors} = CLI.parse_args(["serve", "--no-http"])
+      assert doors[:mcp_stdio] == true
+      assert doors[:http] == false
+
+      assert {:serve, doors} = CLI.parse_args(["serve", "--no-stdio", "--http-port", "8123"])
+      assert doors[:mcp_stdio] == false
+      assert doors[:http] == true
+      assert doors[:http_port] == 8123
+    end
+
+    test "both doors closed is an error" do
+      assert {:error, message} = CLI.parse_args(["serve", "--no-stdio", "--no-http"])
+      assert message =~ "both doors closed"
+    end
+
+    test "a bad port is an error" do
+      assert {:error, "Bad --http-port: 70000" <> _} = CLI.parse_args(["serve", "--http-port", "70000"])
+      assert {:error, "Bad --http-port: x" <> _} = CLI.parse_args(["serve", "--http-port", "x"])
+    end
+
+    test "an unknown serve flag is an error" do
+      assert {:error, "Unknown serve flag: --tcp"} = CLI.parse_args(["serve", "--tcp"])
+    end
+
+    test "--mcp-server is the deprecated spelling of serve" do
+      assert CLI.parse_args(["--mcp-server"]) == CLI.parse_args(["serve"])
+    end
+  end
+
+  describe "parse_args/1 submit" do
+    test "parses a full submit" do
+      args = [
+        "submit",
+        "--repo", "o/r",
+        "--title", "T",
+        "--body", "B",
+        "--platform", "github",
+        "--label", "bug",
+        "--dry-run"
+      ]
+
+      assert {:submit, issue, opts} = CLI.parse_args(args)
+      assert issue == %{title: "T", body: "B", repo: "o/r"}
+      assert opts[:platforms] == [:github]
+      assert opts[:labels] == ["bug"]
+      assert opts[:dry_run] == true
+      assert opts[:repo] == "o/r"
+    end
+
+    test "a missing --repo is an error" do
+      assert {:error, "Missing required --repo"} =
+               CLI.parse_args(["submit", "--title", "T", "--body", "B"])
+    end
+
+    test "an unknown flag is an error" do
+      assert {:error, "Unknown flag: --bogus"} = CLI.parse_args(["submit", "--bogus"])
+    end
+  end
+
+  describe "run/2" do
+    test "--version prints the canonical version and halts 0" do
+      {result, out} = with_io(fn -> CLI.run(["--version"]) end)
+      assert result == {:halt, 0}
+      assert out == "feedback-o-tron v1.0.0\n"
+    end
+
+    test "--help mentions serve and never the old spelling" do
+      {result, out} = with_io(fn -> CLI.run(["--help"]) end)
+      assert result == {:halt, 0}
+      assert out =~ "feedback-o-tron serve"
+      assert out =~ ~s("args": ["serve"])
+      refute out =~ "a-tron"
+    end
+
+    test "no arguments prints help and halts 0" do
+      {result, out} = with_io(fn -> CLI.run([]) end)
+      assert result == {:halt, 0}
+      assert out =~ "USAGE"
+    end
+
+    test "an unknown command halts 1 with the error on stderr" do
+      {result, err} = with_io(:stderr, fn -> CLI.run(["frobnicate"]) end)
+      assert result == {:halt, 1}
+      assert err =~ "Error: Unknown command: frobnicate"
+    end
+
+    test "submit --dry-run halts 0 and prints the dry-run line" do
+      args = ["submit", "--repo", "o/r", "--title", "T", "--body", "B", "--dry-run"]
+      {result, out} = with_io(fn -> CLI.run(args) end)
+      assert result == {:halt, 0}
+      assert out =~ "[DRY RUN] github: Would submit"
+    end
+
+    test "a failed destination halts 1" do
+      args = ["submit", "--repo", "o/r", "--title", "T", "--body", "B", "--dry-run"]
+
+      submit = fn _issue, _opts ->
+        {:ok, "sub-2", [{:error, %{platform: :github, error: :boom}}]}
+      end
+
+      {result, out} = with_io(fn -> CLI.run(args, submit: submit) end)
+      assert result == {:halt, 1}
+      assert out =~ "✗ github: :boom"
+    end
+
+    test "a submission error halts 1 with the reason on stderr" do
+      args = ["submit", "--repo", "o/r", "--title", "T", "--body", "B", "--dry-run"]
+      submit = fn _issue, _opts -> {:error, :no_credentials} end
+      {result, err} = with_io(:stderr, fn -> CLI.run(args, submit: submit) end)
+      assert result == {:halt, 1}
+      assert err =~ "Submission failed: :no_credentials"
+    end
+  end
+end
+----
+
+(The `--dry-run` flag in the last two tests keeps Task 7's confirm gate out
+of the way once it lands; the fake `submit:` is what makes them fail.)
+
+* [ ] *Step 6.2: Run it and watch it fail.*
+
+[source,bash]
+----
+mix test test/cli_test.exs
+----
+
+Expected: compile errors — `CLI.parse_args/1` and `CLI.run/2` are private or
+undefined (not rehearsed).
+
+* [ ] *Step 6.3: Rewrite `main/1`, add `run/2`, make `parse_args/1` public.*
+In `lib/feedback_a_tron/cli.ex` replace everything from `def main(args) do`
+through the last `parse_args` clause (`defp parse_args(_) do … end`, lines
+13–76) with:
+
+[source,elixir]
+----
+  def main(args) do
+    case run(args) do
+      {:halt, code} -> System.halt(code)
+      :running -> Process.sleep(:infinity)
+    end
+  end
+
+  @doc false
+  @spec run([String.t()], keyword()) :: {:halt, non_neg_integer()} | :running
+  def run(args, opts \\ []) do
+    case parse_args(args) do
+      {:serve, doors} ->
+        if List.first(args) == "--mcp-server" do
+          IO.puts(:stderr, "feedback-o-tron: --mcp-server is deprecated; use `feedback-o-tron serve`")
+        end
+
+        Application.put_env(:feedback_a_tron, :doors, doors)
+        {:ok, _} = Application.ensure_all_started(:feedback_a_tron)
+        :running
+
+      {:submit, issue, submit_opts} ->
+        submit(issue, submit_opts, opts)
+
+      {:version} ->
+        IO.puts("feedback-o-tron v#{version()}")
+        {:halt, 0}
+
+      {:help} ->
+        print_help(:stdio)
+        {:halt, 0}
+
+      {:error, message} ->
+        IO.puts(:stderr, "Error: #{message}")
+        print_help(:stderr)
+        {:halt, 1}
+    end
+  end
+
+  @doc false
+  def parse_args(["serve" | rest]), do: parse_serve_flags(rest, mcp_stdio: true, http: true)
+  def parse_args(["--mcp-server" | rest]), do: parse_serve_flags(rest, mcp_stdio: true, http: true)
+  def parse_args(["--version" | _]), do: {:version}
+  def parse_args(["--help" | _]), do: {:help}
+
+  def parse_args(["submit" | rest]) do
+    case parse_submit_args(rest) do
+      {:ok, issue, opts} -> {:submit, issue, opts}
+      {:error, msg} -> {:error, msg}
+    end
+  end
+
+  def parse_args([]), do: {:help}
+  def parse_args([other | _]), do: {:error, "Unknown command: #{other}"}
+
+  defp parse_serve_flags([], doors) do
+    if doors[:mcp_stdio] or doors[:http] do
+      {:serve, doors}
+    else
+      {:error, "serve: both doors closed (--no-stdio and --no-http); nothing to serve"}
+    end
+  end
+
+  defp parse_serve_flags(["--no-stdio" | rest], doors),
+    do: parse_serve_flags(rest, Keyword.put(doors, :mcp_stdio, false))
+
+  defp parse_serve_flags(["--no-http" | rest], doors),
+    do: parse_serve_flags(rest, Keyword.put(doors, :http, false))
+
+  defp parse_serve_flags(["--http-port", value | rest], doors) do
+    case Integer.parse(value) do
+      {port, ""} when port in 1..65535 ->
+        parse_serve_flags(rest, Keyword.put(doors, :http_port, port))
+
+      _ ->
+        {:error, "Bad --http-port: #{value} (expected 1..65535)"}
+    end
+  end
+
+  defp parse_serve_flags([flag | _], _doors), do: {:error, "Unknown serve flag: #{flag}"}
+
+  defp submit(issue, submit_opts, run_opts) do
+    {:ok, _} = Application.ensure_all_started(:feedback_a_tron)
+    submit_fun = Keyword.get(run_opts, :submit, &Submitter.submit/2)
+
+    case submit_fun.(issue, submit_opts) do
+      {:ok, id, results} ->
+        IO.puts("\n✅ Submission #{id} completed")
+        print_results(results)
+        {:halt, exit_code(results)}
+
+      {:error, reason} ->
+        IO.puts(:stderr, "\n❌ Submission failed: #{inspect(reason)}")
+        {:halt, 1}
+    end
+  end
+
+  defp exit_code(results) do
+    if Enum.any?(results, &match?({:error, _}, &1)), do: 1, else: 0
+  end
+----
+
+Remove the now-unused `alias FeedbackATron.{Submitter, MCP}` → `alias
+FeedbackATron.Submitter`, and drop `require Logger` if nothing in the module
+logs any more (the compiler will say). Leave `parse_submit_args/1`,
+`extract_options/1`, `parse_flags/2`, `build_issue/1` and `print_results/1`
+as they are.
+
+Replace `version/0` at the end of the module with a version that loads the
+application first (the escript no longer starts it before `main/1`):
+
+[source,elixir]
+----
+  defp version do
+    case Application.load(:feedback_a_tron) do
+      :ok -> :ok
+      {:error, {:already_loaded, _}} -> :ok
+    end
+
+    case Application.spec(:feedback_a_tron, :vsn) do
+      vsn when is_list(vsn) -> List.to_string(vsn)
+      _ -> "unknown"
+    end
+  end
+----
+
+* [ ] *Step 6.4: Rewrite the help text.* Replace `print_help/0` with
+`print_help/1`:
+
+[source,elixir]
+----
+  defp print_help(device) do
+    IO.puts(device, """
+    feedback-o-tron v#{version()} - multi-platform feedback and bug-report submission
+
+    USAGE:
+        feedback-o-tron serve [--no-stdio] [--no-http] [--http-port N]
+        feedback-o-tron submit --repo REPO --title TITLE --body BODY [OPTIONS]
+        feedback-o-tron --version
+        feedback-o-tron --help
+
+    SERVE:
+        Runs the engine in this process and opens its doors: the MCP server on
+        stdin/stdout (for Claude Code and other MCP hosts) and the HTTP intake
+        on 127.0.0.1:7722 (for boj and local tools). With the MCP door open
+        the process exits when stdin closes; with --no-stdio it runs until
+        stopped (Ctrl-C or SIGTERM). Environment: FEEDBACK_O_TRON_HTTP_PORT,
+        FEEDBACK_O_TRON_HTTP_BIND.
+        --no-stdio          Do not open the MCP door
+        --no-http           Do not open the HTTP intake
+        --http-port N       HTTP intake port (default 7722)
+
+    SUBMIT OPTIONS:
+        --repo REPO         Target repository (owner/repo, or product for Bugzilla)
+        --title TITLE       Issue title
+        --body BODY         Issue body (Markdown)
+        --platform NAME     github (default), gitlab, bitbucket, codeberg, bugzilla, email; repeatable
+        --label LABEL       Apply a label; repeatable
+        --component NAME    Bugzilla component
+        --version VER       Bugzilla version
+        --dry-run           Print what would be sent and send nothing
+
+        Exit codes: 0 sent (or dry run); 1 bad arguments or a destination failed.
+
+    CREDENTIALS:
+        GitHub: `gh auth login` (the gh CLI's token is used), or GITHUB_TOKEN.
+        Others: GITLAB_TOKEN, BITBUCKET_TOKEN, CODEBERG_TOKEN,
+        BUGZILLA_API_KEY (or BUGZILLA_USERNAME + BUGZILLA_PASSWORD).
+
+    MCP INTEGRATION (Claude Code):
+        claude mcp add feedback-o-tron -- /full/path/to/feedback-o-tron serve
+        or, in the MCP settings file:
+        {
+          "feedback-o-tron": {
+            "command": "/full/path/to/feedback-o-tron",
+            "args": ["serve"]
+          }
+        }
+    """)
+  end
+----
+
+* [ ] *Step 6.5: Stop the escript from starting the application before
+`main/1`.* In `mix.exs` change `defp escript` to:
+
+[source,elixir]
+----
+  defp escript do
+    [main_module: FeedbackATron.CLI, name: "feedback-a-tron", app: nil]
+  end
+----
+
+(The `name:` changes to `feedback-o-tron` in Task 9.)
+
+* [ ] *Step 6.6: Verify.*
+
+[source,bash]
+----
+mix test test/cli_test.exs
+mix test
+mix compile --force --warnings-as-errors; echo "rc=$?"
+mix format --check-formatted; echo "rc=$?"
+grep -n 'a-tron' lib/feedback_a_tron/cli.ex
+----
+
+Expected: `16 tests, 0 failures`; full suite `301 tests, 0 failures`
+(previous 289 minus the old cli tests plus 16 — adjust to the number `mix
+test` prints and record it in the PR); both `rc=0`; the grep prints nothing
+(not rehearsed).
+
+* [ ] *Step 6.7: Commit.*
+
+[source,bash]
+----
+git add lib/feedback_a_tron/cli.ex test/cli_test.exs mix.exs
+git commit -F - <<'MSG'
+feat(cli): `serve` opens the doors; run/2 seam; real exit codes
+
+main/1 is now System.halt around run/2, which is testable. `serve` sets the
+:doors application env and starts the application once; --mcp-server is the
+deprecated spelling. The escript no longer starts the application before
+main/1 (app: nil), which is what made argv sniffing necessary. A failed
+destination exits 1.
+MSG
+----
+
+== Task 7: The confirm gate — nothing leaves the CLI without a person's yes
+
+*Files:*
+
+* Modify: `elixir-mcp/lib/feedback_a_tron/cli.ex` (the `submit/3` private
+  function from Task 6; the SUBMIT OPTIONS help paragraph)
+* Modify: `elixir-mcp/test/cli_test.exs` (add a `describe "run/2 confirm gate"`)
+
+*Interfaces:*
+
+* Consumes: `run/2` (Task 6).
+* Produces: `run/2` accepts `confirm:` (a zero-arity function returning a
+  boolean, default asks at the terminal); public `@doc false
+  payload_preview(issue :: map(), submit_opts :: keyword()) :: String.t()`;
+  exit code 3 = "not sent"; the stderr line `feedback-o-tron: stdin is not a
+  terminal; refusing to send without a person's yes. Use --dry-run to
+  preview.` (Task 10 greps `not a terminal`; Task 16 and Task 17 document
+  the prompt).
+
+*Why:* P3 says nothing leaves the machine before the ledger; SP3 builds the
+ledger. Until then the CLI shows the entire payload and asks. There is no
+`--yes` flag on purpose (YAGNI: "no auto-send that skips the ledger"); an
+agent that wants to send must hand the command to its user. Rehearsed under
+OTP 27 without a terminal: `:prim_tty.isatty(:stdin)` is exported and
+returns `false` both with no stdin and with a pipe; the positive case (a
+real terminal returns `true`) is verified by the person in Task 20.
+`maybe_apply_template/1` in `submitter.ex` only rewrites the issue when
+`issue.template_data` is set and the CLI never sets it, so the preview is
+exactly what is sent.
+
+* [ ] *Step 7.1: Write the failing tests.* Append to `test/cli_test.exs`,
+inside the module:
+
+[source,elixir]
+----
+  describe "run/2 confirm gate" do
+    @args ["submit", "--repo", "o/r", "--title", "T", "--body", "line one\nline two", "--label", "bug"]
+
+    test "prints the whole payload and refuses when the person says no" do
+      submit = fn _issue, _opts -> flunk("nothing may be sent after a no") end
+
+      {result, out} =
+        with_io(fn -> CLI.run(@args, confirm: fn -> false end, submit: submit) end)
+
+      assert result == {:halt, 3}
+      assert out =~ "Everything below leaves this machine; nothing else does."
+      assert out =~ "Destinations: github"
+      assert out =~ "Repository:   o/r"
+      assert out =~ "Title:        T"
+      assert out =~ "Labels:       bug"
+      assert out =~ "    line one\n    line two"
+    end
+
+    test "sends when the person says yes and halts 0 on success" do
+      submit = fn issue, opts ->
+        assert issue.title == "T"
+        assert opts[:platforms] == [:github]
+        {:ok, "sub-1", [{:ok, %{platform: :github, url: "https://github.com/o/r/issues/1"}}]}
+      end
+
+      {result, out} =
+        with_io(fn -> CLI.run(@args, confirm: fn -> true end, submit: submit) end)
+
+      assert result == {:halt, 0}
+      assert out =~ "✓ github: https://github.com/o/r/issues/1"
+    end
+
+    test "--dry-run never asks" do
+      confirm = fn -> flunk("a dry run must not prompt") end
+      {result, out} = with_io(fn -> CLI.run(@args ++ ["--dry-run"], confirm: confirm) end)
+      assert result == {:halt, 0}
+      assert out =~ "[DRY RUN] github: Would submit"
+    end
+
+    test "payload_preview/2 lists Bugzilla component and version only when set" do
+      issue = %{title: "T", body: "B", repo: "fedora"}
+      opts = [platforms: [:bugzilla], labels: [], component: "maliit-keyboard", version: "43"]
+      preview = CLI.payload_preview(issue, opts)
+      assert preview =~ "Destinations: bugzilla"
+      assert preview =~ "Component:    maliit-keyboard"
+      assert preview =~ "Version:      43"
+      assert preview =~ "Labels:       (none)"
+      refute CLI.payload_preview(issue, platforms: [:github]) =~ "Component:"
+    end
+  end
+----
+
+* [ ] *Step 7.2: Run it and watch it fail.*
+
+[source,bash]
+----
+mix test test/cli_test.exs
+----
+
+Expected: the "refuses" test fails with `nothing may be sent after a no`
+(the fake ran), and the `payload_preview/2` test fails with
+`UndefinedFunctionError` (not rehearsed).
+
+* [ ] *Step 7.3: Add the gate.* In `lib/feedback_a_tron/cli.ex` replace the
+`submit/3` function from Task 6 with:
+
+[source,elixir]
+----
+  defp submit(issue, submit_opts, run_opts) do
+    {:ok, _} = Application.ensure_all_started(:feedback_a_tron)
+
+    if submit_opts[:dry_run] or confirm_send(issue, submit_opts, run_opts) do
+      do_submit(issue, submit_opts, run_opts)
+    else
+      IO.puts(:stderr, "Not sent.")
+      {:halt, 3}
+    end
+  end
+
+  # SP1b pre-ledger rule: nothing leaves the machine from the CLI until a
+  # person has seen the whole payload and typed yes at a terminal. The privacy
+  # ledger (SP3) replaces this with a per-report ledger and standing choices.
+  # There is no --yes flag on purpose.
+  defp confirm_send(issue, submit_opts, run_opts) do
+    IO.puts(payload_preview(issue, submit_opts))
+    confirm = Keyword.get(run_opts, :confirm, &tty_confirm/0)
+    confirm.()
+  end
+
+  defp do_submit(issue, submit_opts, run_opts) do
+    submit_fun = Keyword.get(run_opts, :submit, &Submitter.submit/2)
+
+    case submit_fun.(issue, submit_opts) do
+      {:ok, id, results} ->
+        IO.puts("\n✅ Submission #{id} completed")
+        print_results(results)
+        {:halt, exit_code(results)}
+
+      {:error, reason} ->
+        IO.puts(:stderr, "\n❌ Submission failed: #{inspect(reason)}")
+        {:halt, 1}
+    end
+  end
+
+  @doc false
+  def payload_preview(issue, submit_opts) do
+    platforms = submit_opts |> Keyword.get(:platforms, [:github]) |> Enum.map_join(", ", &to_string/1)
+    labels = submit_opts |> Keyword.get(:labels, []) |> Enum.join(", ")
+
+    optional =
+      for {label, key} <- [{"Component:   ", :component}, {"Version:     ", :version}],
+          value = Keyword.get(submit_opts, key),
+          not is_nil(value),
+          do: "#{label} #{value}\n"
+
+    """
+    About to send this report. Everything below leaves this machine; nothing else does.
+
+    Destinations: #{platforms}
+    Repository:   #{issue.repo}
+    Title:        #{issue.title}
+    Labels:       #{if labels == "", do: "(none)", else: labels}
+    #{Enum.join(optional)}Body:
+    #{indent(issue.body)}
+    """
+  end
+
+  defp indent(text) do
+    text |> String.split("\n") |> Enum.map_join("\n", &("    " <> &1))
+  end
+
+  defp tty_confirm do
+    if stdin_tty?() do
+      answer = IO.gets("Send this report? [y/N] ")
+      is_binary(answer) and String.downcase(String.trim(answer)) in ["y", "yes"]
+    else
+      IO.puts(
+        :stderr,
+        "feedback-o-tron: stdin is not a terminal; refusing to send without a person's yes. " <>
+          "Use --dry-run to preview."
+      )
+
+      false
+    end
+  end
+
+  # OTP 26+ exports :prim_tty.isatty/1 (it answers false for a pipe and for
+  # a closed stdin); :io.columns/0 is the older proxy for the same question.
+  defp stdin_tty? do
+    if Code.ensure_loaded?(:prim_tty) and function_exported?(:prim_tty, :isatty, 1) do
+      :prim_tty.isatty(:stdin) == true
+    else
+      match?({:ok, _}, :io.columns())
+    end
+  end
+----
+
+Then in `print_help/1` replace the line `Exit codes: 0 sent (or dry run); 1
+bad arguments or a destination failed.` with:
+
+[source,text]
+----
+        Without --dry-run the full payload is printed and you are asked
+        "Send this report? [y/N]". Nothing is sent without a y typed at a
+        terminal; there is no --yes flag.
+        Exit codes: 0 sent (or dry run); 1 bad arguments or a destination
+        failed; 3 not sent.
+----
+
+* [ ] *Step 7.4: Verify.*
+
+[source,bash]
+----
+mix test test/cli_test.exs
+mix test
+mix compile --force --warnings-as-errors; echo "rc=$?"
+mix format --check-formatted; echo "rc=$?"
+----
+
+Expected: `20 tests, 0 failures`; the full suite passes with four more tests
+than Task 6 reported; both `rc=0` (not rehearsed).
+
+* [ ] *Step 7.5: Commit.*
+
+[source,bash]
+----
+git add lib/feedback_a_tron/cli.ex test/cli_test.exs
+git commit -F - <<'MSG'
+feat(cli): print the whole payload and ask before anything is sent
+
+Pre-ledger rule for SP1b (spec P3): a CLI submit without --dry-run prints
+every field that will leave the machine and waits for a y at a terminal.
+No --yes flag; a non-terminal stdin exits 3 without sending.
+MSG
+----
+
+== Task 8: Credentials — `gh auth token` when hosts.yml has no token
+
+*Files:*
+
+* Modify: `elixir-mcp/lib/feedback_a_tron/credentials.ex:116-131`
+  (`load_gh_cli_token/0`)
+* Modify: `elixir-mcp/test/credentials_test.exs` (add a `describe`)
+
+*Interfaces:*
+
+* Consumes: `System.cmd/3`.
+* Produces: public `@doc false FeedbackATron.Credentials.gh_auth_token(cmd ::
+  (binary, [binary], keyword -> {binary, integer})) :: String.t() | nil`. The
+  GitHub credential order is unchanged: `GITHUB_TOKEN` / `GH_TOKEN`, then the
+  gh CLI (hosts.yml, then `gh auth token`).
+
+*Why:* the stranger in Task 20 runs `gh auth login` as the README tells
+them. On a desktop, gh stores the token in the system keyring and writes
+`~/.config/gh/hosts.yml` *without* `oauth_token`, so the existing reader
+returns `nil` and the submit fails with no credentials. `gh auth token`
+prints the token from wherever gh keeps it.
+
+* [ ] *Step 8.1: Write the failing tests.* Append inside
+`FeedbackATron.CredentialsTest`:
+
+[source,elixir]
+----
+  describe "gh_auth_token/1" do
+    test "returns the trimmed token when gh exits 0" do
+      cmd = fn "gh", ["auth", "token"], _opts -> {"ghp_x\n", 0} end
+      assert Credentials.gh_auth_token(cmd) == "ghp_x"
+    end
+
+    test "returns nil when gh is not logged in" do
+      cmd = fn _, _, _ -> {"no oauth token\n", 1} end
+      assert Credentials.gh_auth_token(cmd) == nil
+    end
+
+    test "returns nil on an empty token" do
+      assert Credentials.gh_auth_token(fn _, _, _ -> {"\n", 0} end) == nil
+    end
+
+    test "returns nil when gh is not installed" do
+      cmd = fn _, _, _ -> raise ErlangError, original: :enoent end
+      assert Credentials.gh_auth_token(cmd) == nil
+    end
+  end
+----
+
+* [ ] *Step 8.2: Run it and watch it fail.*
+
+[source,bash]
+----
+mix test test/credentials_test.exs
+----
+
+Expected: 4 failures with `UndefinedFunctionError … gh_auth_token/1` (not
+rehearsed).
+
+* [ ] *Step 8.3: Implement.* Replace `load_gh_cli_token/0` with:
+
+[source,elixir]
+----
+  defp load_gh_cli_token do
+    load_gh_hosts_token() || load_gh_auth_token()
+  end
+
+  # gh writes oauth_token into hosts.yml only when no system keyring is
+  # available; on a desktop the token lives in the keyring and hosts.yml has
+  # no oauth_token line. `gh auth token` answers in both cases.
+  defp load_gh_hosts_token do
+    config_path = Path.expand("~/.config/gh/hosts.yml")
+
+    case File.read(config_path) do
+      {:ok, content} ->
+        case YamlElixir.read_from_string(content) do
+          {:ok, %{"github.com" => %{"oauth_token" => token}}} -> token
+          _ -> nil
+        end
+
+      {:error, _} ->
+        nil
+    end
+  end
+
+  defp load_gh_auth_token, do: gh_auth_token(&System.cmd/3)
+
+  @doc false
+  def gh_auth_token(cmd) do
+    case cmd.("gh", ["auth", "token"], stderr_to_stdout: true) do
+      {out, 0} ->
+        case String.trim(out) do
+          "" -> nil
+          token -> token
+        end
+
+      _ ->
+        nil
+    end
+  rescue
+    # System.cmd raises ErlangError :enoent when gh is not installed.
+    ErlangError -> nil
+  end
+----
+
+* [ ] *Step 8.4: Verify.*
+
+[source,bash]
+----
+mix test test/credentials_test.exs
+mix test
+mix compile --force --warnings-as-errors; echo "rc=$?"
+mix format --check-formatted; echo "rc=$?"
+----
+
+Expected: `13 tests, 0 failures` (9 existing + 4); full suite passes; both
+`rc=0` (not rehearsed).
+
+* [ ] *Step 8.5: Commit.*
+
+[source,bash]
+----
+git add lib/feedback_a_tron/credentials.ex test/credentials_test.exs
+git commit -F - <<'MSG'
+feat(credentials): fall back to `gh auth token` for the GitHub token
+
+On desktops gh keeps the token in the system keyring and hosts.yml carries
+no oauth_token, so the hosts.yml reader alone returned nil after a
+successful `gh auth login`.
+MSG
+----
+
+== Task 9: The `o-tron` rename on every user-facing surface; tracked artefacts out
+
+*Files:*
+
+* Modify: `elixir-mcp/mix.exs:7` (`@source_url`), `:21` (`description`),
+  `:76-78` (`escript`), `:91-96` (`docs`)
+* Modify: `elixir-mcp/lib/feedback_a_tron/http_intake/router.ex:37`
+* Delete: `elixir-mcp/feedback-a-tron` (a committed 2 MB escript),
+  `elixir-mcp/lib/rescript.lock`, `examples/web-project-deno.json` (the only
+  file in `examples/`; the directory goes with it)
+* Modify: `.gitignore`
+
+*Interfaces:*
+
+* Produces: the built binary is `elixir-mcp/feedback-o-tron` (Task 10, Task
+  11 and Task 15 depend on that path); `GET /health` answers `{"status":
+  "ok", "service": "feedback-o-tron", "intake": "http"}`.
+* Left alone on purpose (spec: the namespace rename is a mechanical
+  follow-up): `FeedbackATron.*`, `:feedback_a_tron`, the release name
+  `feedback_a_tron`, the credential file paths under
+  `~/.config/feedback-a-tron/`, and the SMTP/NNTP sender defaults
+  `feedback-a-tron@localhost` (wire identifiers; changing them is a
+  behaviour change for people with existing configs).
+
+* [ ] *Step 9.1: Edit `mix.exs`.* The four blocks read, after the edit:
+
+[source,elixir]
+----
+  @version "1.0.0"
+  @source_url "https://github.com/hyperpolymath/feedback-o-tron"
+----
+
+[source,elixir]
+----
+      # Docs
+      name: "FeedbackATron",
+      description:
+        "Feedback-o-Tron: multi-platform feedback and bug-report submission for people and AI agents",
+      source_url: @source_url,
+      docs: docs()
+----
+
+[source,elixir]
+----
+  defp escript do
+    [main_module: FeedbackATron.CLI, name: "feedback-o-tron", app: nil]
+  end
+----
+
+[source,elixir]
+----
+  defp docs do
+    [
+      main: "FeedbackATron.CLI",
+      source_ref: "v#{@version}"
+    ]
+  end
+----
+
+(The old `extras: ["README.md", "ARCHITECTURE.md"]` named two files that do
+not exist; the documents are AsciiDoc and ex_doc does not render them.)
+
+* [ ] *Step 9.2: Rename the health field.* In `router.ex` line 37:
+
+[source,elixir]
+----
+    send_json(conn, 200, %{status: "ok", service: "feedback-o-tron", intake: "http"})
+----
+
+* [ ] *Step 9.3: Remove the tracked artefacts and ignore built escripts.*
+From the repository root:
+
+[source,bash]
+----
+git rm --quiet elixir-mcp/feedback-a-tron elixir-mcp/lib/rescript.lock examples/web-project-deno.json
+cat >> .gitignore <<'EOF'
+
+# Built escripts (mix escript.build output)
+/elixir-mcp/feedback-o-tron
+/elixir-mcp/feedback-a-tron
+EOF
+----
+
+* [ ] *Step 9.4: Verify.*
+
+[source,bash]
+----
+cd elixir-mcp
+mix compile --force --warnings-as-errors; echo "rc=$?"
+mix format --check-formatted; echo "rc=$?"
+mix test
+mix escript.build && ls -la feedback-o-tron
+cd .. && git status --porcelain | grep -c feedback-o-tron
+grep -rn 'a-tron' elixir-mcp/lib elixir-mcp/mix.exs elixir-mcp/test elixir-mcp/config | grep -v 'credentials\|nntp.ex\|mailman.ex\|file_store.ex'
+test -d examples; echo "examples rc=$?"
+----
+
+Expected: `rc=0` twice; the suite passes; `feedback-o-tron` exists and is
+executable; the `grep -c` prints `0` (the binary is ignored); the `a-tron`
+grep prints nothing; `examples rc=1` (not rehearsed).
+
+* [ ] *Step 9.5: Commit.*
+
+[source,bash]
+----
+git add .gitignore elixir-mcp/mix.exs elixir-mcp/lib/feedback_a_tron/http_intake/router.ex
+git commit -F - <<'MSG'
+chore: feedback-o-tron on every user-facing surface; drop tracked artefacts
+
+Escript name, source URL, description, health field. The committed
+escript, rescript.lock and the Deno example are removed; built escripts
+are ignored. The Elixir namespace stays FeedbackATron until the mechanical
+follow-up after SP1b.
+MSG
+----
+
+(`git rm` already staged the three deletions.)
+
+== Task 10: Escript smoke tests — the binary, end to end
+
+*Files:*
+
+* Create: `elixir-mcp/test/escript_smoke_test.exs`
+
+*Interfaces:*
+
+* Consumes: the built binary `elixir-mcp/feedback-o-tron` (Task 9), the
+  `:escript` tag (Task 3), `serve` (Task 6), the confirm gate's exit code 3
+  and stderr text (Task 7), `GET /health` (Task 9), `Req` (already a
+  dependency).
+* Produces: the command `mix escript.build && mix test --only escript`,
+  which Task 11 (`just smoke`) and Task 15 (CI) run.
+
+*Why:* every unit test above runs inside `mix test`, where the application
+is already started. Only the binary proves that `app: nil` + `serve` starts
+it once, that stdout carries nothing but JSON-RPC, that stdin EOF ends the
+process, and that a real submit is refused without a terminal.
+
+* [ ] *Step 10.1: Write the tests.*
+
+[source,elixir]
+----
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+defmodule FeedbackATron.EscriptSmokeTest do
+  @moduledoc """
+  End-to-end tests of the built binary. Tagged :escript and excluded by
+  default; run with `mix escript.build && mix test --only escript`.
+  """
+  use ExUnit.Case, async: false
+
+  @moduletag :escript
+  @moduletag timeout: 60_000
+
+  @bin Path.expand("../feedback-o-tron", __DIR__)
+
+  @initialize ~s({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}})
+
+  setup_all do
+    unless File.exists?(@bin) do
+      flunk("#{@bin} is missing; run `mix escript.build` first")
+    end
+
+    :ok
+  end
+
+  test "--version prints the canonical version" do
+    assert {"feedback-o-tron v1.0.0\n", 0} = System.cmd(@bin, ["--version"])
+  end
+
+  test "--help names serve and never the old spelling" do
+    {out, 0} = System.cmd(@bin, ["--help"])
+    assert out =~ "feedback-o-tron serve"
+    refute out =~ "a-tron"
+  end
+
+  test "submit --dry-run sends nothing and exits 0" do
+    args = ["submit", "--repo", "o/r", "--title", "T", "--body", "B", "--dry-run"]
+    {out, 0} = System.cmd(@bin, args, stderr_to_stdout: true)
+    assert out =~ "[DRY RUN] github: Would submit"
+  end
+
+  test "a real submit without a terminal is refused with exit 3" do
+    args = ["submit", "--repo", "o/r", "--title", "T", "--body", "B"]
+    {out, 3} = System.cmd(@bin, args, stderr_to_stdout: true)
+    assert out =~ "Title:        T"
+    assert out =~ "not a terminal"
+  end
+
+  test "serve answers initialize on stdout, nothing else, and exits 0 at EOF" do
+    err = Path.join(System.tmp_dir!(), "fot-smoke-#{System.unique_integer([:positive])}.err")
+
+    script =
+      "printf '%s\\n' '" <> @initialize <> "' | '" <> @bin <> "' serve --no-http 2>'" <> err <> "'"
+
+    {out, 0} = System.cmd("sh", ["-c", script])
+    File.rm(err)
+
+    [line] = String.split(out, "\n", trim: true)
+
+    assert %{"id" => 1, "result" => %{"serverInfo" => %{"name" => "feedback-o-tron"}}} =
+             Jason.decode!(line)
+  end
+
+  test "serve opens the HTTP intake and closes it when stdin closes" do
+    {:ok, probe} = :gen_tcp.listen(0, ip: {127, 0, 0, 1})
+    {:ok, port} = :inet.port(probe)
+    :ok = :gen_tcp.close(probe)
+
+    child =
+      Port.open({:spawn_executable, @bin}, [
+        :binary,
+        :exit_status,
+        args: ["serve", "--http-port", Integer.to_string(port)]
+      ])
+
+    health = "http://127.0.0.1:#{port}/health"
+
+    assert wait_until(40, 250, fn ->
+             match?(
+               {:ok, %{status: 200, body: %{"status" => "ok", "service" => "feedback-o-tron"}}},
+               Req.get(health, retry: false)
+             )
+           end),
+           "HTTP intake never answered on #{health}"
+
+    # Closing the port closes the child's stdin; the MCP loop sees EOF and
+    # stops the VM, which is how an MCP host ends its server.
+    Port.close(child)
+
+    assert wait_until(40, 250, fn -> match?({:error, _}, Req.get(health, retry: false)) end),
+           "HTTP intake still answering after stdin closed"
+  end
+
+  defp wait_until(0, _sleep_ms, _fun), do: false
+
+  defp wait_until(tries, sleep_ms, fun) do
+    if fun.() do
+      true
+    else
+      Process.sleep(sleep_ms)
+      wait_until(tries - 1, sleep_ms, fun)
+    end
+  end
+end
+----
+
+Save as `test/escript_smoke_test.exs`.
+
+* [ ] *Step 10.2: Run the suite without the binary and see the tag work.*
+
+[source,bash]
+----
+rm -f feedback-o-tron
+mix test
+mix test --only escript
+----
+
+Expected: the first run prints `… 0 failures (6 excluded)` — plain `mix
+test` never touches the binary (rehearsed: the exclude/only mechanics; the
+count is not rehearsed). The second prints one `setup_all` failure
+`feedback-o-tron is missing; run mix escript.build first`.
+
+* [ ] *Step 10.3: Build and run.*
+
+[source,bash]
+----
+mix escript.build
+mix test --only escript
+----
+
+Expected: `6 tests, 0 failures (N excluded)` (not rehearsed). Likely
+failure modes and what they mean:
+
+* `--version` prints `feedback-o-tron vunknown`: `Application.load/1` in
+  `version/0` (Task 6) did not find the app; check that `mix escript.build`
+  ran after Task 6's `app: nil` change.
+* The `serve … initialize` test gets two stdout lines: something logged to
+  stdout — Task 3's config is not embedded; `mix escript.build` embeds
+  `config/config.exs` only when the file exists at build time.
+* The HTTP test's second wait fails: the process did not stop at EOF — Task
+  5's `default_on_eof` did not run; check that `serve` opened the MCP door
+  (no `--no-stdio`).
+
+* [ ] *Step 10.4: Commit.*
+
+[source,bash]
+----
+git add test/escript_smoke_test.exs
+git commit -F - <<'MSG'
+test: end-to-end smoke tests of the built escript (tag :escript)
+
+--version, --help, dry run, the confirm gate without a terminal, serve over
+stdio with a clean stdout, and the HTTP intake closing when stdin closes.
+Run with: mix escript.build && mix test --only escript
+MSG
+----
+
+
+== Task 11: The Justfile parses, and its recipes are this project's
+
+*Files:*
+
+* Rewrite: `Justfile`
+* Modify: `tasks/Justfile:1`, `:5`
+* Modify: `.machine_readable/contractiles/Justfile:1`, `:7`, `:87-94`
+
+*Interfaces:*
+
+* Consumes: the binary path `elixir-mcp/feedback-o-tron` (Task 9) and the
+  `:escript` test tag (Task 10).
+* Produces: `just build`, `just test`, `just lint`, `just fmt`, `just
+  escript`, `just smoke`, `just serve`, `just install`, `just doctor`,
+  `just clean`. Task 15's CI job calls `just lint` and `just smoke`.
+
+=== Why it is broken
+
+`just --list` fails with `unknown start of token '-'` at `Justfile:88:12`.
+Line 88 is `if command -v panic-attack >/dev/null 2>&1; then`, written flush
+against the left margin inside the `doctor` recipe body (lines 66-101). An
+unindented line ends the recipe, so just parses `if command -v …` as a new
+item; column 12 is the `-` of `-v`. Lines 110-113 and 152-161 have the same
+shape in `heal` and `help-me`. Because the file does not parse, *no* recipe
+runs — including the `must-*` and `trust-*` checks imported from
+`contractile.just`. Those eight checks are unreachable, not failing: run by
+hand in the worktree on 2026-09-08 all eight exit 0 (rehearsed).
+
+The recipes themselves describe a different project. `build` runs `guix
+build`, `check` runs `guix flake check` and `update` runs `guix flake update`
+— `flake` is a Nix subcommand, not a Guix one; `fmt` calls `nixfmt` and
+`lint` calls `statix`, both Nix tools. Nothing there compiles, tests or runs
+the Elixir engine. `tour` describes `src/`, `ffi/`, `src/abi/` and `tests/`,
+none of which exist in this repository.
+
+Two further defects survive the parse fix, and both were measured:
+
+. *`$$` is not a just escape.* `crg-grade`, `crg-badge` and the old `heal`
+  use Makefile idiom: `grade=$$(grep …)`. just passes `$` through to the
+  shell unchanged, so the shell receives a literal `$$(`, which is a syntax
+  error under both `sh` and `bash`:
++
+[source]
+----
+bash: -c: line 1: syntax error near unexpected token `('
+error: recipe `crg-grade` failed on line 6 with exit code 2
+----
++
+These recipes have never worked. The fix is `$$` → `$` (rehearsed: with a
+single `$` the recipe prints `C` from a `**Current Grade:** C` line and `X`
+when `READINESS.md` is absent, which it is today).
+
+. *Do not set `-e` on the shell.* The obvious hardening
+  `set shell := ["bash", "-euo", "pipefail", "-c"]` silently breaks the
+  grade fallback. `grade=$(grep -oP … READINESS.md | head -1)` exits 1 when
+  the grep matches nothing; under `-e` the assignment's non-zero status
+  aborts the recipe before the `[ -z "$grade" ] && grade="X"` fallback can
+  run. Measured:
++
+[source]
+----
+$ bash -euo pipefail -c 'grade=$(grep -oP "ZZZ" READINESS.md | head -1); echo "reached: [$grade]"'; echo "rc=$?"
+rc=1                              # no output at all
+$ bash -uo  pipefail -c 'grade=$(grep -oP "ZZZ" READINESS.md | head -1); echo "reached: [$grade]"'; echo "rc=$?"
+reached: []
+rc=0
+----
++
+Keep `set shell := ["bash", "-uc"]`, as today. just already fails a recipe
+when any line exits non-zero, so `-e` buys nothing here and costs the
+fallback.
+
+* [ ] *Step 11.1: Replace the root `Justfile` wholesale.*
+
+[source,make]
+----
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# feedback-o-tron — development tasks.
+# The engine is an Elixir/OTP application under elixir-mcp/.
+
+set shell := ["bash", "-uc"]
+set dotenv-load := true
+
+import? "contractile.just"
+
+project := "feedback-o-tron"
+engine := "elixir-mcp"
+
+# Show all recipes
+default:
+    @just --list --unsorted
+
+# Fetch and compile dependencies
+deps:
+    cd {{engine}} && mix deps.get
+
+# Compile the engine with warnings as errors
+build: deps
+    cd {{engine}} && mix compile --warnings-as-errors
+
+# Run the test suite (escript tests are excluded; see `just smoke`)
+test: deps
+    cd {{engine}} && mix test
+
+# Check formatting without changing anything
+fmt:
+    cd {{engine}} && mix format --check-formatted
+
+# Rewrite sources to canonical format
+fmt-write:
+    cd {{engine}} && mix format
+
+# Compile clean and check formatting
+lint: build fmt
+
+# Build the standalone binary at elixir-mcp/feedback-o-tron
+escript: deps
+    cd {{engine}} && mix escript.build
+
+# Build the binary and run the end-to-end tests against it
+smoke: escript
+    cd {{engine}} && mix test --only escript
+
+# Run the engine in the foreground; Ctrl-D on stdin stops it
+serve: escript
+    {{engine}}/feedback-o-tron serve
+
+# Install the binary to ~/.local/bin
+install: escript
+    install -Dm755 {{engine}}/feedback-o-tron ~/.local/bin/feedback-o-tron
+    @echo "Installed ~/.local/bin/feedback-o-tron"
+
+# Remove build output and the built binary
+clean:
+    rm -rf {{engine}}/_build {{engine}}/deps {{engine}}/feedback-o-tron
+
+# Build the Guix package defined in guix.scm
+guix-build:
+    guix build -f guix.scm
+
+# Enter a development shell with the toolchain from guix.scm
+guix-shell:
+    guix shell -f guix.scm
+
+# Check the toolchain and report what is missing
+doctor:
+    #!/usr/bin/env bash
+    echo "feedback-o-tron doctor"
+    echo
+    pass=0; fail=0; warn=0
+    ver() {
+        case "$1" in
+            elixir) elixir --short-version ;;
+            erl)    erl -noshell -eval 'io:format("~s~n",[erlang:system_info(otp_release)]), halt().' ;;
+            *)      "$1" --version 2>&1 | head -1 ;;
+        esac
+    }
+    probe() {
+        local kind="$1" cmd="$2" hint="$3"
+        if command -v "$cmd" >/dev/null 2>&1; then
+            echo "  [ok]   $cmd $(ver "$cmd")"
+            pass=$((pass + 1))
+        elif [ "$kind" = need ]; then
+            echo "  [FAIL] $cmd not found ($hint)"
+            fail=$((fail + 1))
+        else
+            echo "  [warn] $cmd not found ($hint)"
+            warn=$((warn + 1))
+        fi
+    }
+    probe need elixir "1.16 or newer"
+    probe need erl    "OTP 26 or newer"
+    probe need git    "2.40 or newer"
+    probe need gh     "GitHub CLI, required to submit issues"
+    probe want podman "only for the container image"
+    probe want guix   "only for the Guix route"
+    echo
+    echo "  $pass ok, $fail missing, $warn optional missing"
+    if [ "$fail" -gt 0 ]; then
+        echo "  Install routes: docs/AI_INSTALLATION_GUIDE.adoc"
+        exit 1
+    fi
+
+# Run the panic-attacker pre-commit scan if it is installed
+assail:
+    @command -v panic-attack >/dev/null 2>&1 && panic-attack assail . || echo "panic-attack not found — https://github.com/hyperpolymath/panic-attacker"
+
+# Print the current CRG grade (reads '**Current Grade:** X' from READINESS.md)
+crg-grade:
+    @grade=$(grep -oP '(?<=\*\*Current Grade:\*\* )[A-FX]' READINESS.md 2>/dev/null | head -1); \
+    [ -z "$grade" ] && grade="X"; \
+    echo "$grade"
+
+# Generate a shields.io badge for the current CRG grade
+crg-badge:
+    @grade=$(grep -oP '(?<=\*\*Current Grade:\*\* )[A-FX]' READINESS.md 2>/dev/null | head -1); \
+    [ -z "$grade" ] && grade="X"; \
+    case "$grade" in \
+      A) color="brightgreen" ;; B) color="green" ;; C) color="yellow" ;; \
+      D) color="orange" ;; E) color="red" ;; F) color="critical" ;; \
+      *) color="lightgrey" ;; esac; \
+    echo "[![CRG $grade](https://img.shields.io/badge/CRG-$grade-$color?style=flat-square)](https://github.com/hyperpolymath/standards/tree/main/component-readiness-grades)"
+
+secret-scan-trufflehog:
+    @command -v trufflehog >/dev/null && trufflehog filesystem . --only-verified || true
+----
+
+`heal`, `tour`, `help-me`, `build-show`, `develop`, `check`, `update`,
+`info`, `show-drv` and `pre-commit` are gone. They automated a Nix flake this
+repository does not have; `doctor` now says what is missing and where the
+install routes are documented, which is what `heal` and `help-me` were
+pretending to do.
+
+* [ ] *Step 11.2: Verify it parses and the recipes run.*
+
+[source,bash]
+----
+just --summary; echo "rc=$?"
+just doctor;    echo "rc=$?"
+just crg-grade
+just must-check
+just trust-verify
+----
+
+Expected (rehearsed on 2026-09-08, `just 1.56.0`): `--summary` exits 0 and
+lists exactly
+
+[source]
+----
+assail build clean crg-badge crg-grade default deps doctor escript fmt
+fmt-write guix-build guix-shell install lint secret-scan-trufflehog serve
+smoke test
+----
+
+`doctor` exits 0 on a host with elixir, erl, git, gh and podman present and
+prints `5 ok, 0 missing, 1 optional missing` when guix is absent. `crg-grade`
+prints `X` (there is no `READINESS.md` in this repository). `must-check` and
+`trust-verify` exit 0 — rehearsed as the eight underlying shell commands run
+by hand, not through just, because just could not run them before this task.
+
+NOTE: `doctor` reports whichever Elixir is first on `PATH`. Without the
+Step 0.2 export that is 1.18.3 on the owner's host, which clears the 1.16
+floor and is *not* the 1.19.5 the rest of this plan is rehearsed against.
+`doctor` is a "can you build it at all" check, not a matrix check; Task 15's
+CI job pins the versions.
+
+* [ ] *Step 11.3: Fix the two sibling Justfiles.*
+
+`tasks/Justfile` parses (rc 0) but is the same Guix-flake template under the
+old name. `.machine_readable/contractiles/Justfile` is the 182-line original
+this root file was copied from, and it carries the identical parse error
+(rc 1) at its own line 88.
+
+[source,bash]
+----
+sed -i '1s|.*|# feedback-o-tron - development tasks|' \
+    tasks/Justfile .machine_readable/contractiles/Justfile
+sed -i 's|^project := "feedback-a-tron"|project := "feedback-o-tron"|' \
+    tasks/Justfile .machine_readable/contractiles/Justfile
+----
+
+Then indent the three unindented blocks in
+`.machine_readable/contractiles/Justfile` (lines 88-94 in `doctor`, 110-113
+in `heal`, 152-161 in `help-me`) by four spaces so the file parses. This one
+is a generated artefact under `.machine_readable/`, so it is repaired rather
+than rewritten — the A2ML sources it is generated from are out of scope per
+the standing ruling.
+
+* [ ] *Step 11.4: Verify both siblings.*
+
+[source,bash]
+----
+(cd tasks && just --summary >/dev/null; echo "tasks rc=$?")
+(cd .machine_readable/contractiles && just --summary >/dev/null; echo "contractiles rc=$?")
+grep -rn "feedback-a-tron" Justfile tasks/Justfile .machine_readable/contractiles/Justfile; echo "grep rc=$?"
+----
+
+Expected: both `rc=0` (not rehearsed for the contractiles file — it parses
+only after the indent fix). The grep exits 1 with no output.
+
+* [ ] *Step 11.5: Commit.*
+
+[source,bash]
+----
+git add Justfile tasks/Justfile .machine_readable/contractiles/Justfile
+git commit -F - <<'MSG'
+build: make the Justfile parse and give it this project's recipes
+
+The root Justfile has never parsed: an unindented `if` inside the doctor
+recipe body ends the recipe, so just reports "unknown start of token '-'"
+at Justfile:88:12 and no recipe runs at all — including the must-* and
+trust-* checks imported from contractile.just.
+
+The recipes it did carry drove a Nix flake (guix flake check, nixfmt,
+statix) that this repository does not have. Replaced with real ones:
+build, test, lint, fmt, escript, smoke, serve, install, doctor, clean.
+
+Also fixes $$ -> $ in crg-grade and crg-badge. just passes $ through to
+the shell, so the Makefile idiom $$(...) reached bash as a literal $$(
+and was a syntax error; those two recipes have never run.
+MSG
+----
+
+== Task 12: One toolchain, declared twice — `mise.toml` and `guix.scm`
+
+*Files:*
+
+* Rewrite: `mise.toml`
+* Rewrite: `guix.scm`
+* Delete: `packaging/guix/packages.scm` (and the now-empty `packaging/guix/`)
+
+*Interfaces:*
+
+* Produces: `mise install` and `guix shell -f guix.scm` both put Elixir and
+  Erlang on `PATH`. Task 0.2's manual `export PATH=…` becomes unnecessary
+  once `mise.toml` is trusted.
+
+=== Why it is broken
+
+`mise.toml` is a generic scaffolding template that was never edited for this
+project. It asks for node, python, rust, go, zig, java, bun, denojs, npm,
+yarn, pnpm, pip, cargo, go-task, gofmt, black, isort, ruff, prettier, shfmt,
+stylua, cmake, make, ninja, git, gnu-sed, gnu-tar, gnu-grep, vitest, pytest
+and jest — 31 tools, *none of them Elixir or Erlang*, for a repository whose
+only source language is Elixir. Its `[alias]` block redefines `build`, `test`,
+`lint` and `fmt` as cargo/npm/go fallback chains, which is why they cannot be
+reconciled with the Justfile. It carries no SPDX header.
+
+Worse, it is an untrusted config on the owner's host: `mise exec` refuses
+with "Config files … are not trusted", which is why Step 0.2 exports `PATH`
+by hand. Replacing the file is what removes that workaround.
+
+`guix.scm` has three defects, all visible at a glance:
+
+. `(gnu packages base)` is imported twice, at lines 8 and 10.
+. The inputs are `coreutils bash make openjdk rust cmake zig go node python`
+  — the same generic set, no Erlang, no Elixir. (`make` is also the wrong
+  symbol; the Guix package variable is `gnu-make`.)
+. Line 28 calls the `license` record constructor through `@@` with two
+  arguments: `((@@ (guix licenses) license) "MPL-2.0" "https://…")`. That
+  record takes three fields (name, uri, comment), so the form is
+  arity-broken. `(guix licenses)` is already imported on line 7 and exports
+  `mpl2.0` directly.
+
+The version says `0.1.0`; `mix.exs` says `1.0.0`, which is canonical.
+
+`packaging/guix/packages.scm` is a channel definition for a package named
+`feedback-a-tron-mcp` at version `0.1.0`, fetching a git tag `v0.1.0`, with
+a source hash of 52 literal zeros and a `julia-build-system` import. The
+hash is a placeholder, so the definition cannot build; the tag it names does
+not exist (the repository's tag is `v1.0.0`). Nothing references this file.
+Delete it rather than maintain a second, broken package definition alongside
+`guix.scm`.
+
+* [ ] *Step 12.1: Replace `mise.toml`.*
+
+[source,toml]
+----
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# feedback-o-tron builds with Elixir on the BEAM. Nothing else is required.
+# The versions here are the ones CI tests against (.github/workflows/elixir-ci.yml).
+
+[tools]
+erlang = "27.0"
+elixir = "1.19.5-otp-27"
+just = "latest"
+----
+
+No `[env]` and no `[alias]`: the environment the engine needs is set in
+`elixir-mcp/config/config.exs` (Task 3), and the task names live in the
+Justfile (Task 11). Two places claiming to define `build` is how they drift.
+
+* [ ] *Step 12.2: Trust the new config and verify.*
+
+[source,bash]
+----
+mise trust
+mise install
+mise exec -- elixir --short-version
+mise exec -- erl -noshell -eval 'io:format("~s~n",[erlang:system_info(otp_release)]), halt().'
+----
+
+Expected: `1.19.5` and `27` (not rehearsed — `mise exec` refuses today, which
+is the defect this step removes; `mise trust` is the step that clears it).
+
+NOTE: `gh` is *not* in the mise registry, so it cannot be added here. It is a
+system package, and Task 17 makes it a hard prerequisite in the install guide.
+
+* [ ] *Step 12.3: Replace `guix.scm`.*
+
+[source,scheme]
+----
+;; SPDX-License-Identifier: MPL-2.0
+;; Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+;;
+;; Guix development environment for feedback-o-tron.
+;; Usage: guix shell -D -f guix.scm
+
+(use-modules (guix packages)
+             (guix build-system gnu)
+             (guix licenses)
+             (gnu packages base)
+             (gnu packages bash)
+             (gnu packages erlang)
+             (gnu packages elixir)
+             (gnu packages version-control))
+
+(package
+  (name "feedback-o-tron")
+  (version "1.0.0")
+  (source #f)
+  (build-system gnu-build-system)
+  (inputs (list coreutils bash git erlang elixir))
+  (synopsis "Feedback and bug-report submission for people and AI agents")
+  (description
+   "Feedback-o-Tron submits feedback and bug reports to GitHub, GitLab, email
+and NNTP, from a command line, from an MCP host, or over a loopback HTTP
+intake.  Nothing leaves the machine until a person has seen the whole payload
+and said yes.")
+  (home-page "https://github.com/hyperpolymath/feedback-o-tron")
+  (license mpl2.0))
+----
+
+* [ ] *Step 12.4: Delete the channel file.*
+
+[source,bash]
+----
+git rm packaging/guix/packages.scm
+rmdir packaging/guix 2>/dev/null || true
+----
+
+* [ ] *Step 12.5: Verify the Guix file.*
+
+[source,bash]
+----
+guix build -f guix.scm
+just guix-shell
+----
+
+Expected: NOT REHEARSED. `guix` is not installed on the owner's host —
+`just doctor` (Task 11) reports `[warn] guix not found`, and that is the
+measured state on 2026-09-08. Two failure modes to expect and what to do:
+
+* `unbound variable: elixir` — the package lives in `(gnu packages elixir)`
+  on current Guix; on an older channel it may not exist. Drop `elixir` from
+  the inputs and use `mise` (Step 12.1) as the primary route; Guix is the
+  fallback route, not the required one.
+* A syntax error pointing at `(license mpl2.0)` — confirm `(guix licenses)`
+  is imported unprefixed on line 7 as written above. Do *not* restore the
+  `@@` form; it was the bug.
+
+Whichever happens, record the actual output in the PR body rather than
+marking this step passed.
+
+* [ ] *Step 12.6: Commit.*
+
+[source,bash]
+----
+git add mise.toml guix.scm
+git commit -F - <<'MSG'
+build: declare the real toolchain in mise.toml and guix.scm
+
+mise.toml was an unedited scaffolding template: 31 tools, none of them
+Elixir or Erlang, plus [alias] entries redefining build/test/lint/fmt as
+cargo/npm/go chains. Being untrusted, it also made `mise exec` refuse,
+which is why the docs told people to export PATH by hand.
+
+guix.scm imported (gnu packages base) twice, listed the same generic
+inputs, and called the license record constructor with two arguments
+through @@ when (guix licenses) already exports mpl2.0. Version follows
+mix.exs at 1.0.0.
+
+Removes packaging/guix/packages.scm: a channel definition for a
+feedback-a-tron-mcp package at a tag that does not exist, with a source
+hash of 52 zeros, importing julia-build-system. It could never build and
+nothing referenced it.
+MSG
+----
+
+== Task 13: A container image that builds, and holds only this project
+
+*Files:*
+
+* Rewrite: `packaging/Containerfile`
+* Rewrite: `stapeln.toml`
+
+*Interfaces:*
+
+* Consumes: the OTP release `feedback_a_tron` declared in `elixir-mcp/mix.exs`
+  (`releases/0`, lines 83-88). Task 9 leaves that release name alone on
+  purpose — it is an internal identifier, and the namespace rename is a
+  follow-up — so the image must use `feedback_a_tron`, not `feedback-o-tron`,
+  for the release directory and the `bin/` entry.
+* Consumes: `FeedbackATron.Doors` OS env names (Task 4) —
+  `FEEDBACK_O_TRON_HTTP`, `FEEDBACK_O_TRON_HTTP_PORT` (default 7722),
+  `FEEDBACK_O_TRON_HTTP_BIND` (default `127.0.0.1`).
+* Produces: an image whose only open door is the HTTP intake on 7722.
+
+=== Why it is broken
+
+The Containerfile has never built. Two of its `COPY` instructions name paths
+that do not exist:
+
+* Line 51 copies `/build/elixir-mcp/_build/prod/rel/gh_manage`. The release
+  is called `feedback_a_tron` (`mix.exs:84`); `gh_manage` is the name of a
+  different project. The `ENTRYPOINT` (line 77) and `HEALTHCHECK` (line 82)
+  name `bin/gh_manage` for the same reason.
+* Line 64 copies `STATE.scm` from the build context. There is no `STATE.scm`
+  in this repository — the machine-readable state lives at
+  `.machine_readable/6a2/STATE.a2ml` (Task 14). A `COPY` of a missing path
+  is a hard build failure, so this file cannot have been built since that
+  rename.
+
+Beyond that it carries a whole second project: a Julia builder stage (lines
+24-33) that instantiates `julia-stats/`, and a runtime that installs `julia`
+and `nickel` (lines 39-42). `julia-stats/` exists in the tree but is not part
+of the runnable product SP1b delivers, and nothing in the Elixir engine reads
+the Nickel schemas in root `config/`. The image also copies root `config/`
+and `scripts/` (`scraper.exs`, `sync-state.sh`), neither of which the release
+uses. The label says `Apache-2.0`; the project is MPL-2.0. Every name in it
+is `feedback-a-tron`.
+
+`stapeln.toml` describes a third, different build: `containerfile =
+"Containerfile"` (the file is at `packaging/Containerfile`), a toolchain
+layer whose only package is `julia`, a build layer running
+`Pkg.instantiate()`, a runtime that copies `/app/` — which no earlier layer
+writes — and an entrypoint `/app/bin/feedback-o-tron` that nothing produces.
+Its version is `0.1.0`.
+
+* [ ] *Step 13.1: Replace `packaging/Containerfile`.*
+
+[source,dockerfile]
+----
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# feedback-o-tron — HTTP intake image.
+# Build from the repository root:
+#   podman build -f packaging/Containerfile -t feedback-o-tron .
+
+# ---- Stage 1: build the OTP release -----------------------------------
+FROM cgr.dev/chainguard/wolfi-base:latest AS builder
+
+RUN apk add --no-cache elixir erlang git build-base
+
+WORKDIR /build/elixir-mcp
+
+# Dependencies first, so a source-only change does not refetch them.
+COPY elixir-mcp/mix.exs elixir-mcp/mix.lock ./
+RUN mix local.hex --force && \
+    mix local.rebar --force && \
+    MIX_ENV=prod mix deps.get --only prod
+
+COPY elixir-mcp/ ./
+RUN MIX_ENV=prod mix release
+
+# ---- Stage 2: runtime -------------------------------------------------
+FROM cgr.dev/chainguard/wolfi-base:latest AS runtime
+
+# `mix release` bundles ERTS, so no erlang package here — only the shared
+# libraries it links against.
+RUN apk add --no-cache ca-certificates ncurses openssl libstdc++
+
+RUN adduser -D -u 1000 feedback
+USER feedback
+WORKDIR /home/feedback
+
+COPY --from=builder --chown=feedback:feedback \
+    /build/elixir-mcp/_build/prod/rel/feedback_a_tron ./release/
+
+# The HTTP intake is the only door this image opens. It binds all
+# interfaces because the container has its own network namespace; publish
+# it with `-p 127.0.0.1:7722:7722` to keep it on the host's loopback.
+ENV LANG=C.UTF-8 \
+    HOME=/home/feedback \
+    FEEDBACK_O_TRON_HTTP=1 \
+    FEEDBACK_O_TRON_HTTP_PORT=7722 \
+    FEEDBACK_O_TRON_HTTP_BIND=0.0.0.0
+
+EXPOSE 7722
+
+ENTRYPOINT ["/home/feedback/release/bin/feedback_a_tron"]
+CMD ["start"]
+
+HEALTHCHECK --interval=30s --timeout=3s \
+    CMD /home/feedback/release/bin/feedback_a_tron pid || exit 1
+
+LABEL org.opencontainers.image.title="feedback-o-tron" \
+      org.opencontainers.image.description="Feedback and bug-report submission for people and AI agents" \
+      org.opencontainers.image.source="https://github.com/hyperpolymath/feedback-o-tron" \
+      org.opencontainers.image.licenses="MPL-2.0"
+----
+
+* [ ] *Step 13.2: Pin the base image by digest.*
+
+Estate practice is pinned base images, and `contractile.just`'s
+`trust-container-images-pinned` recipe greps for `@sha256:`. Resolve the
+digest and rewrite both `FROM` lines — do not copy a digest out of this
+document, because the tag moves:
+
+[source,bash]
+----
+podman pull cgr.dev/chainguard/wolfi-base:latest
+DIGEST=$(podman inspect --format '{{index .RepoDigests 0}}' cgr.dev/chainguard/wolfi-base:latest)
+echo "$DIGEST"
+sed -i "s|cgr.dev/chainguard/wolfi-base:latest|${DIGEST}|g" packaging/Containerfile
+grep -c '@sha256:' packaging/Containerfile   # expect: 2
+----
+
+NOTE: `trust-container-images-pinned` only inspects a `Containerfile` at the
+repository *root*. This project's is at `packaging/Containerfile`, so that
+check passes vacuously and always has. It is recorded in "Noticed, not in
+this plan" rather than changed here — the recipe is generated from
+`contractiles/Trustfile.a2ml`, and the A2ML sources are out of scope.
+
+* [ ] *Step 13.3: Replace `stapeln.toml`.*
+
+[source,toml]
+----
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+# stapeln.toml — layer-based container build for feedback-o-tron.
+
+[metadata]
+name = "feedback-o-tron"
+version = "1.0.0"
+description = "Feedback and bug-report submission for people and AI agents"
+author = "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"
+license = "MPL-2.0"
+registry = "ghcr.io/hyperpolymath"
+
+[build]
+containerfile = "packaging/Containerfile"
+context = "."
+runtime = "podman"
+
+[layers.base]
+description = "Chainguard Wolfi minimal base"
+from = "cgr.dev/chainguard/wolfi-base:latest"
+cache = true
+verify = true
+
+[layers.toolchain]
+description = "Elixir and Erlang build tools"
+extends = "base"
+packages = ["elixir", "erlang", "git", "build-base"]
+cache = true
+
+[layers.build]
+description = "OTP release build"
+extends = "toolchain"
+commands = [
+    "cd elixir-mcp && mix local.hex --force && mix local.rebar --force",
+    "cd elixir-mcp && MIX_ENV=prod mix deps.get --only prod",
+    "cd elixir-mcp && MIX_ENV=prod mix release",
+]
+
+[layers.runtime]
+description = "Release plus its shared libraries; ERTS is bundled"
+from = "cgr.dev/chainguard/wolfi-base:latest"
+packages = ["ca-certificates", "ncurses", "openssl", "libstdc++"]
+copy-from = [
+    { layer = "build", src = "/build/elixir-mcp/_build/prod/rel/feedback_a_tron/", dst = "/home/feedback/release/" },
+]
+entrypoint = ["/home/feedback/release/bin/feedback_a_tron", "start"]
+user = "nonroot"
+
+[security]
+non-root = true
+read-only-root = false
+no-new-privileges = true
+cap-drop = ["ALL"]
+seccomp-profile = "default"
+
+[security.signing]
+algorithm = "ML-DSA-87"
+provider = "cerro-torre"
+----
+
+The `[security]` and `[security.signing]` blocks are carried over unchanged.
+
+* [ ] *Step 13.4: Build and run it.*
+
+[source,bash]
+----
+podman build -f packaging/Containerfile -t feedback-o-tron .
+podman run --rm -d --name fot -p 127.0.0.1:7722:7722 feedback-o-tron
+sleep 3
+curl -sS http://127.0.0.1:7722/health; echo
+podman logs fot | head -20
+podman rm -f fot
+----
+
+Expected: NOT REHEARSED (no image was built while writing this plan).
+`/health` should answer `{"status":"ok","service":"feedback-o-tron","intake":"http"}`
+— the exact body Task 9 sets in `router.ex:37`. Likely failure modes:
+
+* `COPY failed: no such file or directory` naming
+  `_build/prod/rel/feedback_a_tron`: the release name in `mix.exs:84` was
+  changed after all. Read it and match the `COPY`, `ENTRYPOINT` and
+  `HEALTHCHECK` paths to it — all three must agree.
+* The container starts and exits 0 immediately: no door opened, so the
+  supervision tree had nothing to supervise. Check `FEEDBACK_O_TRON_HTTP=1`
+  survived into the image (`podman inspect --format '{{.Config.Env}}'`).
+* `curl: (56) Recv failure` with the container still up: the intake bound
+  loopback *inside* the container. Confirm `FEEDBACK_O_TRON_HTTP_BIND=0.0.0.0`
+  and that `Doors.config/2` parses it to `{0,0,0,0}` (Task 4's test
+  "port and bind come from env" covers exactly this).
+
+* [ ] *Step 13.5: Commit.*
+
+[source,bash]
+----
+git add packaging/Containerfile stapeln.toml
+git commit -F - <<'MSG'
+build: a container image that builds and holds only this project
+
+The Containerfile could not build. It copied
+_build/prod/rel/gh_manage — the release is feedback_a_tron (mix.exs:84),
+gh_manage belongs to another project — and it copied STATE.scm, which
+this repository does not have; a COPY of a missing path fails the build.
+
+It also carried a Julia builder stage, installed julia and nickel in the
+runtime, and copied root config/ and scripts/ that the release never
+reads. Now two stages: build the OTP release, then run it. mix release
+bundles ERTS, so the runtime installs shared libraries only.
+
+The only door the image opens is the HTTP intake on 7722, configured
+through the FEEDBACK_O_TRON_HTTP* names that Doors.config/2 reads.
+Labels corrected from Apache-2.0 to MPL-2.0.
+
+stapeln.toml pointed at a Containerfile at the repository root, built a
+julia layer, and copied /app/, which no layer wrote. It now describes the
+same two-stage build as the Containerfile.
+MSG
+----
+
+== Task 14: Metadata that describes this project, at this version
+
+*Files:*
+
+* Modify: `.well-known/humans.txt:10`, `:13`, `:14`
+* Modify: `.machine_readable/6a2/STATE.a2ml:4`, `:8`, `:9`, `:14`, `:15`,
+  `:19`, `:20` — *value strings only*
+* Rewrite: `.well-known/groove/manifest.json`
+* Modify: `elixir-mcp/ARCHITECTURE.adoc:750-932` (replace the whole
+  `=== Packaging` section)
+
+*Interfaces:*
+
+* Consumes: the CLI surface from Task 6 (`serve`, `submit`, `--dry-run`) and
+  the confirm gate from Task 7 (a non-terminal stdin means no). The groove
+  manifest's `invoke_patterns` may only name commands that exist and behave
+  as advertised, so this task cannot be written before Task 7 is settled.
+* Consumes: `packaging/Containerfile` (Task 13) and `guix.scm` (Task 12) —
+  the new packaging section points at them instead of inlining a second,
+  divergent copy.
+* Produces: nothing another task consumes. It runs last of the file-editing
+  tasks because it is the one that can contradict all the others.
+
+=== Why it is broken
+
+Four files describe this project to machines and to strangers. Each of them
+describes either a different project or this one at a state it has never
+been in.
+
+*`.well-known/humans.txt`* was last updated 2026-03-28, which predates the
+HTTP intake, the synthesis engine and every door SP1b touches. Its
+`Components: Idris2 ABI, Zig FFI` line is *incomplete rather than false* —
+both do exist (`src/abi/FeedbackOTron/Contract.idr`, `ffi/zig/build.zig`) —
+but it omits the Elixir/OTP engine, which is the entire product. The spec
+requires the manifests to declare Elixir/OTP (SP1b, "Done when"). `Tools`
+omits mise.
+
+*`.machine_readable/6a2/STATE.a2ml`* carries a version that exists nowhere
+else (`1.2.0-dev`; `mix.exs` says `1.0.0`, which is canonical per the
+Global Constraints), a `last-updated` of 2026-07-09, and an undefined
+`completion-percentage = 75`.
+
+Line 19 is not merely stale, it is false:
+
+[source,toml]
+----
+mcp-server = "100% (research_feedback, synthesize_feedback, submit_feedback, migration_observe)"
+----
+
+`migration_observe` is not an exposed MCP tool name. Three facts, each read
+from the tree:
+
+. `application.ex:66-70` registers exactly three modules with the server —
+  `SubmitFeedback`, `ResearchFeedback`, `SynthesizeFeedback`.
+. `server.ex:231` builds the `tools/list` reply by calling `mod.name()` over
+  that registered list.
+. `mcp/tools/migration_observe.ex` defines no `name/0` at all. It declares
+  five *inner* tool names (`begin_migration_observation`,
+  `log_migration_event`, `end_migration_observation`,
+  `review_migration_queue`, `submit_approved_migrations`, at lines 33, 106,
+  170, 226 and 341) and nothing registers it.
+
+So a host that calls `tools/list` sees three tools, never `migration_observe`,
+and never the five inner names either. The MigrationObserver being unwired is
+recorded in "Noticed, not in this plan"; what this task fixes is the claim.
+
+*`.well-known/groove/manifest.json`* advertises a command line that has never
+existed. `invoke_patterns.ci` is
+`feedback-o-tron submit --ci --format json --source dogfood-gate`: `submit`
+is real (Task 6), but `--ci`, `--format` and `--source` are not, and never
+were — the flags are `--repo --title --body --platform --label --component
+--version --dry-run`. `invoke_patterns.local` names `--interactive`, which
+does not exist either; asking is the default. `invoke_patterns.mcp` is
+`boj cartridge_invoke feedback-o-tron`, naming the cartridge concept the
+owner dropped on 2026-09-07.
+
+`"health": null` is a schema violation, not a blank. The groove manifest
+schema (`schema/groove-manifest.schema.json`, carried in the estate under
+`meta-repos/paint-type/third_party/gossamer/`) declares:
+
+[source,json]
+----
+"health": { "type": "string", "description": "Health check endpoint path.", "default": "/health" }
+----
+
+`type: string` is not nullable, and `/health` is exactly the path Task 9's
+router serves. `service_version` is `0.2.0`.
+
+There is one design consequence to get right here rather than repeat the old
+lie in a new form. Task 7 makes the CLI refuse to send when stdin is not a
+terminal. A CI runner has no terminal. So the honest `ci` invoke pattern is
+a `--dry-run`, which prints the payload and sends nothing; there is no
+non-interactive send in SP1b, by ruling, and a manifest that advertises one
+would be advertising an exit code 3.
+
+*`elixir-mcp/ARCHITECTURE.adoc:750-932`* is a third project's packaging. The
+`==== Wolfi/nerdctl Container` block copies `_build/prod/rel/gh_manage`,
+sets `ENV OBSERVATORY_CONFIG`, ends `CMD ["./bin/gh_manage", "start"]`, and
+carries `EXPOSE 4000 8080 8787` on line 786 — two 8080-class ports, against
+the estate hardening doctrine. `==== Guix Channel` (791) defines
+`(observatory packages)`. `==== Guix Flake (Fallback)` (851-931) is a *Nix*
+flake under a heading that calls it Guix. All of it now contradicts Tasks 12
+and 13, which is why this section goes and the rest of the file's Observatory
+content stays for the closing list.
+
+* [ ] *Step 14.1: Update `.well-known/humans.txt`.*
+
+[source,bash]
+----
+sed -i \
+  -e 's|^Last update: .*|Last update: 2026-09-08|' \
+  -e 's|^Components: .*|Components: Elixir/OTP engine, Idris2 contract (spec only), Zig FFI (stub)|' \
+  -e 's|^Tools: .*|Tools: mise, just, Podman, Guix|' \
+  .well-known/humans.txt
+----
+
+The parentheticals are not hedging: `STATE.a2ml:33` says `zig-ffi = "stub"`
+and `:34` says `idris2 = "contract spec only (Contract.idr), no FFI
+enforcement"`. A humans.txt that lists them flat alongside the engine
+promises a stranger three working components when there is one.
+
+* [ ] *Step 14.2: Update `.machine_readable/6a2/STATE.a2ml` — values only.*
+
+The standing ruling is hands off the `.a2ml` grammar. Every edit below
+replaces the right-hand side of an existing key; no key is added, removed or
+re-nested, and no section header is touched.
+
+[source,bash]
+----
+sed -i \
+  -e 's|^# Updated .*|# Updated 2026-09-08|' \
+  -e 's|^version = .*|version = "1.0.0"|' \
+  -e 's|^last-updated = .*|last-updated = "2026-09-08"|' \
+  -e 's|^completion-percentage = .*|completion-percentage = 22|' \
+  -e 's|^phase = .*|phase = "SP1b runnable product; SP2-SP8 outstanding"|' \
+  -e 's|^mcp-server = .*|mcp-server = "3 tools registered (submit_feedback, research_feedback, synthesize_feedback); migration_observe is written but not registered"|' \
+  -e 's|^http-intake = .*|http-intake = "Bandit on 127.0.0.1:7722, off unless FEEDBACK_O_TRON_HTTP=1; opened by FeedbackATron.Doors"|' \
+  .machine_readable/6a2/STATE.a2ml
+----
+
+`^version = ` matches line 8 only; the `[metadata]` and `[project-context]`
+blocks each carry a `name = ` key but neither is touched.
+
+On `completion-percentage`: the old `75` had no stated basis, so it could
+not be checked or falsified. `22` does have one — the design doc's build
+order lists nine sub-projects (SP1a, SP1b, SP2-SP8), of which SP1a and SP1b
+are complete when this plan lands: 2/9 = 22%. Write the basis into the
+commit message so the next person can recompute it rather than guess.
+
+Line 3 (`# Converted from STATE.scm on 2026-03-15`) stays. It is a true
+historical note, and it is the reason `packaging/Containerfile` was still
+copying `STATE.scm` in Task 13.
+
+* [ ] *Step 14.3: Replace `.well-known/groove/manifest.json`.*
+
+[source,json]
+----
+{
+  "groove_version": "1",
+  "service_id": "feedback-o-tron",
+  "service_version": "1.0.0",
+  "mode": "passive",
+  "capabilities": {
+    "bug-reporting": {
+      "type": "bug-reporting",
+      "description": "Multi-platform feedback and bug-report submission for people and AI agents — GitHub, GitLab, Bitbucket, Codeberg, Bugzilla and email",
+      "protocol": "cli",
+      "requires_auth": true,
+      "panel_compatible": true
+    },
+    "dogfood-feedback": {
+      "type": "dogfood-feedback",
+      "description": "Receives DOG-XX check failures from dogfood-gate and drafts actionable issues",
+      "protocol": "cli",
+      "requires_auth": true,
+      "panel_compatible": true
+    }
+  },
+  "consumes": [
+    "static-analysis",
+    "octad-storage",
+    "bot-orchestration"
+  ],
+  "invoke_patterns": {
+    "ci": "feedback-o-tron submit --repo OWNER/REPO --title TITLE --body BODY --dry-run",
+    "local": "feedback-o-tron submit --repo OWNER/REPO --title TITLE --body BODY",
+    "mcp": "feedback-o-tron serve"
+  },
+  "health": "/health",
+  "applicability": [
+    "individual",
+    "team",
+    "ci"
+  ]
+}
+----
+
+`consumes`, `mode`, `applicability` and the two capability keys are carried
+over unchanged — nothing measured says they are wrong. What changed is the
+version, the three invoke patterns and `health`.
+
+The `ci` pattern ends in `--dry-run` deliberately. Task 7 refuses to send
+without a person's typed yes and a CI runner has no terminal, so a CI
+invocation that omitted `--dry-run` would exit 3 with
+`stdin is not a terminal` on every run. Advertising it would be the same
+class of defect this task is fixing.
+
+* [ ] *Step 14.4: Replace the packaging section of `ARCHITECTURE.adoc`.*
+
+Print the range first — a splice deletes whatever is in it, including
+content you did not know was there:
+
+[source,bash]
+----
+sed -n '748,752p;930,935p' elixir-mcp/ARCHITECTURE.adoc
+----
+
+Expected: line 750 is `=== Packaging`, 931 is a `----` block terminator, 932
+is blank and 933 is `=== What's Built vs TODO`. If those lines say anything
+else, an earlier task moved the file; re-derive the range with
+`grep -n '^=== ' elixir-mcp/ARCHITECTURE.adoc` before splicing.
+
+Write the replacement, then splice it in:
+
+[source,bash]
+----
+cat > /tmp/fot-packaging.adoc <<'SECTION'
+=== Packaging
+
+Two routes, both defined in the repository rather than described here.
+
+`packaging/Containerfile` builds a container in two stages: a builder that
+runs `MIX_ENV=prod mix release`, then a Wolfi runtime holding the release
+and the shared libraries it links against. `mix release` bundles ERTS, so
+the runtime installs no Erlang. The only door the image opens is the HTTP
+intake on 7722. `stapeln.toml` describes the same build in layer form.
+
+`guix.scm` is the development environment: `guix shell -D -f guix.scm`, or
+`just guix-shell`. `mise.toml` is the primary route and pins the same
+Erlang and Elixir versions CI tests against.
+
+Neither build is reproduced in this document. A build definition copied into
+prose is a second definition, and the two drift: the section that used to
+stand here described the Observatory project's image — `bin/gh_manage`,
+`OBSERVATORY_CONFIG`, `EXPOSE 4000 8080 8787` — alongside a Guix channel for
+`(observatory packages)` and a Nix flake under a heading calling it Guix.
+SECTION
+
+python3 - <<'PY'
+lines = open("elixir-mcp/ARCHITECTURE.adoc").read().split("\n")
+assert lines[749].startswith("=== Packaging"), lines[749]
+assert lines[932].startswith("=== What"), lines[932]
+new = open("/tmp/fot-packaging.adoc").read().rstrip("\n").split("\n")
+out = lines[:749] + new + [""] + lines[932:]
+open("elixir-mcp/ARCHITECTURE.adoc", "w").write("\n".join(out))
+print("spliced: %d lines -> %d" % (len(lines), len(out)))
+PY
+----
+
+The two `assert` lines are the point of using python here rather than `sed
+-i '750,932d'`: a splice that silently lands on the wrong range is the
+failure mode, and an assertion on both ends is cheaper than reading the diff.
+
+* [ ] *Step 14.5: Verify.*
+
+[source,bash]
+----
+cat .well-known/humans.txt
+grep -n 'version\|last-updated\|completion\|phase\|mcp-server\|http-intake' \
+    .machine_readable/6a2/STATE.a2ml
+python3 -c "import json;d=json.load(open('.well-known/groove/manifest.json'));\
+assert isinstance(d['health'],str);print(d['service_version'],d['health'])"
+grep -n 'cartridge_invoke\|[-][-]ci \|[-][-]interactive\|[-][-]format' \
+    .well-known/groove/manifest.json; echo "grep rc=$?"
+asciidoctor -o /dev/null elixir-mcp/ARCHITECTURE.adoc; echo "adoc rc=$?"
+grep -n 'gh_manage\|OBSERVATORY_CONFIG\|8080\|8787\|observatory packages' \
+    elixir-mcp/ARCHITECTURE.adoc
+----
+
+Expected: NOT REHEARSED (no file was modified while writing this plan; the
+line numbers, the current contents and the schema quotation were all read
+from the tree on 2026-09-08, but nothing was edited).
+
+The JSON assertion prints `1.0.0 /health`. The `cartridge_invoke` grep exits
+1 with no output. `asciidoctor` is silent at rc 0.
+
+The last grep is *expected to print five lines, not zero*:
+
+[source]
+----
+177:    webhook_port : Number | default = 8080,
+185:    http_port : Number | default = 8787,
+286:function serve(port::Int=8787)
+392:# lib/gh_manage/scraper.ex
+603:# lib/gh_manage/subscriptions.ex
+----
+
+The first three are inside the Nickel configuration schema and the Julia
+analytics module. The last two are `lib/gh_manage/` source paths inside
+Elixir code listings, far above the spliced range. All five are Observatory
+content in sections this task does not touch, and all five are recorded in
+"Noticed, not in this plan".
+
+WARNING: the discriminator for a mis-landed splice is therefore *not* the
+word `gh_manage` on its own — two legitimate survivors contain it, and
+treating the string as the alarm would report a correct splice as a failure.
+The splice missed if the grep prints `OBSERVATORY_CONFIG`, `observatory
+packages`, `EXPOSE 4000 8080 8787`, or a `gh_manage` line that is a `COPY`
+instruction rather than an Elixir source path. Re-derive the range in that
+case. This count was obtained by running `sed '750,932d'` over a scratch copy
+of the file and grepping the result, so five is measured, not predicted.
+
+NOTE: `elixir-mcp/README.adoc:277` also carries `-p 8080:8080`. That file is
+replaced wholesale in Task 18, so it is not touched here.
+
+* [ ] *Step 14.6: Commit.*
+
+[source,bash]
+----
+git add .well-known/humans.txt .machine_readable/6a2/STATE.a2ml \
+        .well-known/groove/manifest.json elixir-mcp/ARCHITECTURE.adoc
+git commit -F - <<'MSG'
+docs: make the metadata describe this project at this version
+
+STATE.a2ml claimed the MCP server exposes migration_observe. It does not:
+application.ex registers exactly three tool modules, server.ex builds
+tools/list from mod.name() over that list, and migration_observe.ex
+defines no name/0 at all. A host has never seen that tool. Version follows
+mix.exs at 1.0.0; completion-percentage now has a stated basis (2 of the
+9 sub-projects in the design doc's build order = 22) instead of an
+unfalsifiable 75. Values only — the a2ml grammar is untouched.
+
+The groove manifest advertised submit --ci --format json --source, none of
+which are flags this CLI has ever had, and --interactive, which is the
+default rather than a flag. The ci pattern is now a --dry-run: the confirm
+gate refuses to send with no terminal, so a CI send would exit 3 every
+time. health was null against a schema that types it as a string; it is
+now /health, the path the router serves. mcp no longer names the
+cartridge concept dropped on 2026-09-07.
+
+humans.txt omitted the Elixir/OTP engine from Components while listing the
+Idris2 contract and the Zig FFI, which are a spec and a stub.
+
+ARCHITECTURE.adoc's Packaging section belonged to Observatory: it copied
+bin/gh_manage, set OBSERVATORY_CONFIG, exposed 4000/8080/8787, defined a
+guix channel for (observatory packages), and put a Nix flake under a
+heading calling it Guix. Replaced by a short section pointing at
+packaging/Containerfile, stapeln.toml, guix.scm and mise.toml.
+MSG
+----
+
+== Task 15: CI tests the version this plan was written against, and the binary
+
+*Files:*
+
+* Modify: `.github/workflows/elixir-ci.yml:28-31` (the test matrix), `:84-86`
+  (append two steps after "Run tests")
+
+*Interfaces:*
+
+* Consumes: the `:escript` tag from Task 3 (`test_helper.exs` line
+  `ExUnit.start(exclude: [:escript])`) and the smoke tests from Task 10.
+  `mix test --only escript` is the exact inverse of that exclusion; if Task 3
+  spells the tag differently, this job silently runs zero tests.
+* Consumes: `mix escript.build` producing `elixir-mcp/feedback-o-tron`
+  (Task 9). Task 10's `setup_all` flunks with `… is missing; run
+  \`mix escript.build\` first` if the build step is dropped, so a
+  half-applied version of this task fails loudly rather than vacuously.
+* Produces: nothing another task consumes.
+
+=== Why it is broken
+
+Two gaps and one fake gate.
+
+*The matrix does not include the version this plan is rehearsed on.* Line 30
+is `elixir: ['1.15', '1.16', '1.17']` and line 31 is `otp: ['26']`. Every
+`PASS (rehearsed)` in this document was measured on Elixir 1.19.5 / OTP 27.
+`mix.exs:13` says `elixir: "~> 1.15"`, so 1.19 is inside the declared
+support range and untested. The 1.19 compiler adds set-theoretic type
+warnings that 1.17 does not emit, which is precisely the class of failure
+Task 2's `--warnings-as-errors` is supposed to catch.
+
+*The binary is never built in CI.* The job runs `mix deps.get`, `mix compile
+--warnings-as-errors`, `mix format --check-formatted` and `mix test --trace`
+— and stops. Tasks 9 and 10 make `elixir-mcp/feedback-o-tron` the thing a
+stranger actually runs, and nothing in CI would notice if
+`mix escript.build` broke or if the built binary stopped answering
+`--version`.
+
+*The Dialyzer job is a required check that cannot fail.* Lines 9-12 of the
+workflow say so in as many words: "Dialyzer is a REQUIRED status check, so
+it must report on every PR". The job's only real step is:
+
+[source,yaml]
+----
+      - name: Run Dialyzer
+        if: steps.detect.outputs.relevant == 'true'
+        run: mix dialyzer
+        continue-on-error: true
+----
+
+`mix dialyzer` is a task provided by the `dialyxir` package. `dialyxir` is
+not in `mix.exs`'s `deps/0` — it appears in this tree only inside
+`elixir-mcp/deps/*/mix.exs`, which are the dev-dependency lists of packages
+this project depends on, and are never fetched. Measured in the worktree on
+2026-09-08 under Elixir 1.19.5:
+
+[source]
+----
+$ mix dialyzer
+...
+** (Mix) The task "dialyzer" could not be found
+rc=1
+----
+
+`continue-on-error: true` turns that `rc=1` into a successful step, so a
+required check named `Dialyzer` reports green on every PR while running no
+static analysis at all. *This task does not fix it* — the fix is a new
+dependency plus whatever Dialyzer says about a codebase it has never seen,
+which is its own PR with its own red-to-green story. It is carried, with
+this evidence and both repair options, in "Noticed, not in this plan". It is
+recorded here because Task 15 is the only task that reads this file, and a
+reader who patches the matrix without seeing this would reasonably assume
+the type checking already works.
+
+* [ ] *Step 15.1: Add the 1.19 / OTP 27 cell.*
+
+Replace lines 28-31:
+
+[source,yaml]
+----
+    strategy:
+      fail-fast: false
+      matrix:
+        elixir: ['1.15', '1.16', '1.17']
+        otp: ['26']
+        include:
+          # The version SP1b was developed and rehearsed against.
+          - elixir: '1.19'
+            otp: '27'
+----
+
+The `include` entry sets `elixir` to a value no base combination has, so
+GitHub adds a fourth job rather than merging into an existing one: the
+matrix expands to `1.15/26`, `1.16/26`, `1.17/26`, `1.19/27`.
+
+`fail-fast: false` is new and load-bearing. Without it the first old-version
+cell to fail cancels the 1.19 cell, and the run reports nothing about the
+version the work was actually done on — which is the one piece of
+information this change exists to produce.
+
+The cell says `1.19`, not `1.19.5`, so it tracks the patch series;
+`mise.toml` (Task 12) pins `1.19.5-otp-27` for local work. That asymmetry is
+deliberate: a pinned local toolchain makes rehearsals reproducible, and a
+floating CI cell catches a patch release that breaks the build.
+
+* [ ] *Step 15.2: Build and smoke-test the binary.*
+
+Append after the "Run tests" step (line 86), at the same indentation, still
+inside the `test` job — `defaults.run.working-directory` is already
+`elixir-mcp`, so neither step needs a `working-directory` of its own:
+
+[source,yaml]
+----
+      - name: Build the escript
+        if: steps.detect.outputs.relevant == 'true'
+        run: mix escript.build
+      - name: Run the escript smoke tests
+        if: steps.detect.outputs.relevant == 'true'
+        run: mix test --only escript
+----
+
+Both carry the same `if:` as every other step in the job. Omitting it would
+run them on PRs the change detector decided are irrelevant, on a checkout
+where `Set up Elixir` was skipped, and the job would fail with
+`mix: command not found` on unrelated PRs.
+
+The runner has no terminal, so Task 7's confirm gate refuses to send there.
+That is a feature of this job, not a limitation: the CI cell exercises the
+non-tty path — the one that must never send — on every PR, and Task 10's
+test asserts on the `not a terminal` message.
+
+* [ ] *Step 15.3: Verify.*
+
+[source,bash]
+----
+actionlint .github/workflows/elixir-ci.yml; echo "actionlint rc=$?"
+
+python3 - <<'PY'
+import yaml, itertools
+d = yaml.safe_load(open(".github/workflows/elixir-ci.yml"))
+m = d["jobs"]["test"]["strategy"]["matrix"]
+base = [dict(zip(("elixir", "otp"), c))
+        for c in itertools.product(m["elixir"], m["otp"])]
+print("jobs:", len(base) + len(m.get("include", [])))
+steps = [s.get("name") for s in d["jobs"]["test"]["steps"]]
+print("steps:", steps[-2:])
+PY
+----
+
+Expected: PASS (rehearsed 2026-09-08 on a scratch copy of the workflow with
+both edits applied). `actionlint` exits 0; the python prints `jobs: 4` and
+`steps: ['Build the escript', 'Run the escript smoke tests']`.
+
+`actionlint` exiting 0 is a real pass, not a vacuous one — verified with a
+positive control. Replacing `runs-on: ubuntu-latest` with
+`runs-on: ${{ matrix.nonexistent }}` in the same patched file makes it exit
+1 with `property "nonexistent" is not defined in object type {elixir:
+number; otp: number}`. So the tool does parse this file and does type the
+matrix; a clean run means clean.
+
+NOT REHEARSED: the run itself on GitHub. Two things to watch on the first
+green-or-red:
+
+* `erlef/setup-beam` must have a published 1.19/OTP 27 build for
+  `ubuntu-latest`. If the `Set up Elixir` step fails on that cell only, pin
+  the cell to the exact `1.19.5-otp-27` that `mise.toml` uses.
+* If `Run the escript smoke tests` reports `0 failures` *and* `0 tests`, the
+  tag did not match. Compare the atom in `test_helper.exs`
+  (`exclude: [:escript]`) with the `@moduletag` in
+  `test/escript_smoke_test.exs`; a zero-test run is the vacuous-gate
+  signature and must not be read as a pass.
+
+* [ ] *Step 15.4: Commit.*
+
+[source,bash]
+----
+git add .github/workflows/elixir-ci.yml
+git commit -F - <<'MSG'
+ci: test Elixir 1.19/OTP 27 and the built binary
+
+The matrix was 1.15/1.16/1.17 on OTP 26. mix.exs declares ~> 1.15, so 1.18
+and 1.19 are inside the supported range and were untested — and 1.19 is
+where the set-theoretic type warnings live that --warnings-as-errors is
+meant to catch. Adds a 1.19/27 cell through `include` (a fourth job) and
+fail-fast: false, so an old-version failure cannot cancel the cell that
+tests the version this work was done on.
+
+CI also never built the escript, which is the thing a stranger runs. Adds
+mix escript.build and mix test --only escript, both behind the same change
+detector as every other step. The runner has no terminal, so these steps
+also exercise the confirm gate's refuse-to-send path on every PR.
+
+Not fixed here: the Dialyzer job is a required check that cannot fail.
+dialyxir is not a dependency, `mix dialyzer` exits 1 with 'The task
+"dialyzer" could not be found', and continue-on-error: true reports that
+as success. Recorded in the plan's follow-up list.
+MSG
+----
+
+== Task 16: The README a stranger actually follows
+
+*Files:*
+
+* Modify: `README.adoc` — 18 `a-tron` lines; `:135-149` (troubleshooting);
+  `:186-212` (the zero-knowledge prompt); `:240` (`mix run --no-halt`);
+  `:270` (the TCP port); `:407-421` and `:507-521` (the MCP stanzas); a new
+  section inserted before `:423`
+
+*Interfaces:*
+
+* Consumes: everything a stranger touches — the binary name from Task 9,
+  `serve` and `submit` from Task 6, the confirm gate from Task 7, the
+  credential order from Task 8.
+* Produces: the text Task 20's stranger rehearsal follows. Task 20 is the
+  test of this task; if a step here is wrong, Task 20 is where it shows.
+
+=== Why it is broken
+
+The README is the SP1b acceptance criterion — "a stranger files one useful
+report by following the README" — and following it today fails at the second
+command.
+
+*Eighteen lines name a binary that will not exist.* `grep -c 'a-tron'` is 18
+(occurrences and lines both: no line carries two). Task 9 makes
+`mix escript.build` produce `feedback-o-tron`, so every
+`./feedback-a-tron …` in this file becomes `No such file or directory`. The
+retirement of `a-tron` from user-facing surfaces is a 2026-09-07 ruling, not
+a preference.
+
+*Line 240 is the headline defect of SP1b.*
+
+[source,bash]
+----
+# Run MCP server mode
+mix run --no-halt
+----
+
+`mix run --no-halt` starts the OTP application and blocks. It does not start
+the MCP server: with `FEEDBACK_O_TRON_MCP` unset, `Doors.config/2` (Task 4)
+returns `mcp_stdio: false` and no stdio door opens. A stranger runs this,
+sees nothing happen, and has no way to tell that nothing happened.
+
+*The MCP stanza is wrong three ways, and there are three copies of it*
+(lines 196-206 inside the prompt, 407-421, 507-521). Each was checked
+against this host on 2026-09-08:
+
+. *It has no `mcpServers` wrapper.* The stanza is
+  `{"feedback-o-tron": {…}}` at the top level. Real MCP config files nest
+  under `mcpServers` — for example `hyper-repos/boj-server/.mcp.json`:
++
+[source,json]
+----
+{
+  "mcpServers": {
+    "boj-server": { "command": "npx", "args": ["-y", "@hyperpolymath/boj-server@latest"], "env": { … } }
+  }
+}
+----
++
+Pasted as written, the file parses and configures nothing.
+
+. *The path does not exist.* `~/.config/claude/mcp_servers.json` is named
+  three times. That directory is absent on this host, a search of the home
+  tree finds no file called `mcp_servers.json` anywhere, and Claude Code
+  2.1.263 reads `~/.claude.json` and project `.mcp.json`. The supported
+  interface is `claude mcp add <name> [-e KEY=value] -- <command> [args]`.
+
+. *`args: ["--mcp-server"]` is the deprecated spelling.* Task 6 keeps
+  `--mcp-server` working as an alias but prints
+  `feedback-o-tron: --mcp-server is deprecated; use \`feedback-o-tron serve\``
+  to stderr. Stderr is where MCP hosts look for crash output, so shipping a
+  config that provokes a deprecation warning on every start is how a working
+  server gets reported as broken.
+
+*The troubleshooting table documents a flag that does not exist.* Line 148
+says `Use --force to submit anyway`. `grep -rn '\-\-force' elixir-mcp/lib/`
+returns nothing: no such flag has ever been parsed. A person hitting the
+deduplicator follows the README and gets an argument error. Line 142 offers
+`asdf install elixir latest`, which inverts the install-route order in the
+Global Constraints (distribution packages first, asdf demoted).
+
+*Line 270 gives the wrong port for the TCP transport.* It says "TCP mode
+available (line-delimited JSON-RPC on port 844)". `mcp/server.ex:81` reads
+`FEEDBACK_A_TRON_MCP_TCP_PORT` and defaults to *7979*; the transport is off
+unless `FEEDBACK_A_TRON_MCP_TCP` is set (`:77-78`). 844 is the default of
+`scripts/mcp_tcp_smoke_test.sh` (Task 18), which is where the number came
+from and which is also wrong.
+
+*The zero-knowledge prompt tells an assistant to submit bugs.* Its closing
+lines are "After setup, you can submit bugs with commands like: …". After
+Task 7 an assistant cannot: with no terminal the CLI exits 3 with
+`stdin is not a terminal; refusing to send without a person's yes`. The
+prompt has to say who types the `y`, or the first thing it produces is a
+bug report about feedback-o-tron.
+
+* [ ] *Step 16.1: Rename the binary everywhere.*
+
+[source,bash]
+----
+sed -i 's|feedback-a-tron|feedback-o-tron|g' README.adoc
+grep -c 'a-tron' README.adoc; echo "grep rc=$?"
+----
+
+Expected: no output from `grep -c`'s match (it prints `0`) and `rc=1`.
+
+* [ ] *Step 16.2: Fix the manual quick start.* Replace lines 219-241:
+
+[source,bash]
+----
+# Clone and build
+git clone https://github.com/hyperpolymath/feedback-o-tron
+cd feedback-o-tron/elixir-mcp
+mix deps.get
+mix escript.build
+
+# Check it built
+./feedback-o-tron --version          # feedback-o-tron v1.0.0
+
+# Preview a report without sending anything
+./feedback-o-tron submit \
+  --repo "owner/repo" \
+  --title "Bug title" \
+  --body "Description" \
+  --platform github \
+  --dry-run
+
+# Run the engine: MCP on stdin/stdout, HTTP intake on 127.0.0.1:7722
+./feedback-o-tron serve
+----
+
+`mix run --no-halt` is gone. `serve` is the only command that opens a door,
+and it says which doors it opened.
+
+* [ ] *Step 16.3: Fix the three MCP stanzas.* For Claude Code, replace the
+prose and the JSON at 407-421 and 507-521 with the supported command:
+
+[source,bash]
+----
+claude mcp add feedback-o-tron \
+  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+  -- /full/path/to/feedback-o-tron serve
+----
+
+and give the file form once, correctly, for hosts that take a JSON config
+(project `.mcp.json`, or the host's own settings file):
+
+[source,json]
+----
+{
+  "mcpServers": {
+    "feedback-o-tron": {
+      "command": "/full/path/to/feedback-o-tron",
+      "args": ["serve"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+----
+
+`BUGZILLA_API_KEY` comes out of the example env block: the example is a
+GitHub one, and Task 8 reads credentials from the environment or `gh auth
+token` at call time, so listing every platform's key in an MCP config
+teaches a stranger to put five secrets in a file that only needs none.
+
+* [ ] *Step 16.4: Fix the troubleshooting table.* Replace lines 141-148 with:
+
+[source,asciidoc]
+-----
+|"elixir: command not found"
+|Install Elixir from your distribution first: `dnf install elixir`, `apt install elixir`, `brew install elixir`. See link:docs/AI_INSTALLATION_GUIDE.adoc[the installation guide] for every route.
+
+|"401 Unauthorized"
+|The token is expired or lacks scopes. For GitHub, `gh auth login` and let the CLI hold the token.
+
+|"duplicate detected"
+|The deduplicator found an existing report. Read it first; if it is genuinely different, change the title so it is.
+-----
+
+The `--force` row goes rather than gains a flag: the spec's YAGNI list rules
+out anything that lets a caller skip a gate, and "make the title distinct"
+is what a person should do anyway.
+
+* [ ] *Step 16.5: Correct the TCP line.* Replace line 270:
+
+[source,asciidoc]
+-----
+* TCP mode available (line-delimited JSON-RPC), off by default; enable with `FEEDBACK_A_TRON_MCP_TCP=1`, port 7979 (`FEEDBACK_A_TRON_MCP_TCP_PORT`), loopback only
+-----
+
+The env names keep the `A_TRON` spelling because `mcp/server.ex` still reads
+them; renaming them belongs to the namespace follow-up, and a README that
+prints a name the code does not read is worse than one that prints an ugly
+name it does. Note this in the commit message so it is not read as an
+oversight.
+
+* [ ] *Step 16.6: Fix the zero-knowledge prompt.* In the block at 186-212:
+change step 5 to `./feedback-o-tron`, replace step 7's config with the
+`claude mcp add` line from Step 16.3, and replace the closing paragraph
+(lines 208-211) with:
+
+[source,text]
+----
+After setup, drafting a report is yours to run and mine to confirm:
+
+  ./feedback-o-tron submit --repo "owner/repo" --title "..." --body "..." --platform github
+
+The command prints the entire payload and waits for a typed "y". You type
+it, not me — with no terminal the command refuses and exits 3. Add
+--dry-run to see the payload and send nothing.
+
+Project status is in .machine_readable/6a2/STATE.a2ml.
+----
+
+* [ ] *Step 16.7: Add a `== Running the engine` section* immediately before
+`== Formal Specification with Idris2` (line 423 before this task's edits;
+re-find it with `grep -n '^== Formal Specification'`):
+
+[source,asciidoc]
+-----
+== Running the engine
+
+One command runs everything in one OS process:
+
+[source,bash]
+----
+./feedback-o-tron serve
+----
+
+That opens two doors:
+
+* *MCP* on stdin/stdout, for Claude Code and any other MCP host. With this
+  door open the process exits when stdin closes, so a host that goes away
+  does not leave an orphan behind.
+* *HTTP intake* on `127.0.0.1:7722`, for `boj` and local tools.
+  `GET /health` answers
+  `{"status":"ok","service":"feedback-o-tron","intake":"http"}`.
+
+Close either one: `--no-stdio`, `--no-http`. Closing both is an error —
+there would be nothing to serve. `--http-port N` moves the intake;
+`FEEDBACK_O_TRON_HTTP_PORT` and `FEEDBACK_O_TRON_HTTP_BIND` do the same from
+the environment.
+
+Nothing is sent from the CLI without a person's yes. `submit` prints the
+whole payload — every field, exactly as it will be sent — and waits. If
+stdin is not a terminal it refuses and exits 3. There is no `--yes`; use
+`--dry-run` to preview.
+-----
+
+* [ ] *Step 16.8: Verify.*
+
+[source,bash]
+----
+grep -c 'a-tron' README.adoc
+grep -n 'mix run --no-halt\|mcp_servers.json\|--force\|asdf\|port 844' README.adoc
+grep -n 'mcpServers' README.adoc
+asciidoctor -o /tmp/readme.html README.adoc && echo "adoc rc=0"
+grep -c '<td' /tmp/readme.html
+----
+
+Expected: NOT REHEARSED (no edit was applied while writing this plan; every
+line number, count and contradiction above was read from the tree on
+2026-09-08). `grep -c 'a-tron'` prints `0`; the second grep exits 1 with no
+output; `mcpServers` appears once; `asciidoctor` is silent.
+
+The `<td` count is the check that matters after Step 16.4. AsciiDoc tables
+are whitespace-sensitive: a cell that loses its leading `|` silently merges
+into its neighbour and the table renders with fewer cells rather than
+failing. Count `<td` before and after — the troubleshooting table has three
+rows of two columns, so the count must not drop by more than the cells
+actually removed.
+
+* [ ] *Step 16.9: Commit.*
+
+[source,bash]
+----
+git add README.adoc
+git commit -F - <<'MSG'
+docs: make the README something a stranger can follow
+
+The acceptance test for SP1b is a stranger filing one report by following
+this file. Following it failed at the second command: `mix run --no-halt`
+starts the application and blocks without opening the MCP door, so the
+reader sees nothing happen and cannot tell that nothing happened. It is
+now `./feedback-o-tron serve`, and a new "Running the engine" section says
+what serve opens and how the confirm gate behaves.
+
+Eighteen lines invoked ./feedback-a-tron, which mix escript.build no
+longer produces.
+
+All three MCP stanzas were wrong in three ways at once: no mcpServers
+wrapper, so the JSON configures nothing; a path (~/.config/claude/
+mcp_servers.json) that exists nowhere on a machine with Claude Code
+installed; and args ["--mcp-server"], now a deprecated alias that warns on
+stderr. Replaced with `claude mcp add ... -- <path> serve` plus one
+correct file example.
+
+Dropped the troubleshooting row telling people to pass --force, a flag no
+version of this CLI has ever parsed, and the asdf-first Elixir row.
+
+The TCP line said port 844; server.ex defaults to 7979 and the transport
+is off unless FEEDBACK_A_TRON_MCP_TCP is set. The env names keep their
+A_TRON spelling deliberately — that is what the code reads until the
+namespace rename lands.
+MSG
+----
+
+== Task 17: The installation guide an assistant is asked to follow
+
+*Files:*
+
+* Modify: `docs/AI_INSTALLATION_GUIDE.adoc` — 9 `a-tron` lines (74, 190, 290,
+  310, 333, 336, 339, 342, 422); `:112-143` (prerequisites); `:158` and `:169`
+  (two false lines inside the privacy notice); `:278-303` (the MCP stanza);
+  `:305-323` (the verification test); `:348-371` (the error table);
+  `:405-428` (the example conversation)
+
+*Interfaces:*
+
+* Consumes: the binary name from Task 9, `serve` and the top-level
+  `--version` from Task 6, the confirm gate from Task 7, the credential
+  order from Task 8.
+* Produces: nothing another task consumes. This is the document an assistant
+  is pointed at when a person says "install feedback-o-tron", so its failure
+  mode is an assistant confidently walking someone into an error.
+
+=== Why it is broken
+
+This file has a second audience. The README is read by a person; this guide's
+lower half (`:90-373`) is instructions *to an AI assistant* about what to tell
+someone. A wrong line here is not a wrong line a reader can spot — it is a
+wrong line an assistant will assert with full confidence.
+
+*Nine lines invoke `./feedback-a-tron`,* which Task 9 stops producing.
+
+*The document already disagrees with itself about its own output.* Step 5
+(`:80-84`) and Step 7 (`:319-323`) both claim:
+
+[source]
+----
+Submission ABC123 completed
+  [DRY RUN] github: Would submit to test/repo
+----
+
+but the example conversation at `:422` has the user report the real thing:
+`Got "[DRY RUN] github: Would submit"`. `cli.ex:163` is
+`IO.puts("  [DRY RUN] #{platform}: Would submit")` — there is no
+`to test/repo` suffix and never has been. The first line is closer:
+`cli.ex:27` prints `\n✅ Submission #{id} completed`, so the guide drops the
+emoji and the leading blank line. An assistant told to expect a suffix that
+cannot appear will read a correct run as a failed one.
+
+*Two lines of the privacy notice are false,* and both are the kind of false
+that matters most in this particular document:
+
+. `:169` — `Audit log location: ./audit.jsonl (local, never uploaded)`. The
+  file is `feedback_a_tron_audit.jsonl` (`audit_log.ex:23`) and it is written
+  to `System.tmp_dir!()`, not the working directory
+  (`audit_log.ex:139-140`: `log_dir = Keyword.get(opts, :log_dir,
+  System.tmp_dir!())`, then `Path.join(log_dir, @log_file)`). So the guide
+  tells someone their audit trail is in the directory they are standing in,
+  when it is in `/tmp` — a world-readable directory, under a default umask,
+  holding every repository name and issue title they have submitted. "never
+  uploaded" is true; "`./audit.jsonl`" is not.
+. `:158` — `Tokens are loaded from environment variables only`. The GitHub
+  reader has always fallen back to the gh CLI's `~/.config/gh/hosts.yml`,
+  which is a file on disk, and Task 8 adds `gh auth token` after it. The
+  neighbouring line, "Never written to disk by feedback-o-tron", stays true:
+  the engine reads those files, it does not write them.
+
+NOTE: The approved plan says the privacy notice at `:144-175` stays verbatim.
+This task changes exactly two of its lines and leaves the other twenty-four
+alone. That is a deliberate, stated widening of the approved scope, not an
+oversight: a privacy notice is the one block in this repository whose whole
+value is that every sentence in it is true, and both lines were measured
+above. If the widening is unwanted, drop Step 17.4 — every other step stands
+without it.
+
+*The prerequisites step teaches the wrong install order and omits the one
+tool the guide cannot work without.* `:130-143` lists distribution packages,
+then labels asdf "`# asdf (recommended)`" — the Global Constraints have it
+the other way round. And `gh` appears nowhere in Step 2, although the GitHub
+credential path depends on it, `just doctor` (Task 11) probes it as a `need`,
+and Task 12 records that `gh` is *not* in the mise registry, so no toolchain
+file can supply it. It has to be installed as a system package or the guide's
+own GitHub flow dead-ends.
+
+*The MCP stanza at `:288-298` carries all three defects the README's did* —
+no `mcpServers` wrapper, a `~/.config/claude/mcp_servers.json` path that
+exists nowhere on a machine with Claude Code installed, and
+`args: ["--mcp-server"]`, which after Task 6 is a deprecated alias that
+writes a warning to stderr on every start.
+
+*The error table at `:369-370` sends people to a flag that does not exist* —
+`Use --force to submit anyway`, and `grep -rn '\-\-force' elixir-mcp/lib/`
+returns nothing. Same defect as the README's troubleshooting table, same fix.
+
+*Nothing in the guide tells the assistant who types the `y`.* After Task 7 a
+submit without a terminal exits 3 with
+`stdin is not a terminal; refusing to send without a person's yes`. Step 8's
+usage examples (`:329-346`) hand an assistant four `submit` command lines with
+no mention that three of them will refuse to run in its own shell. This is the
+single most likely first bug report about feedback-o-tron, and the guide is
+what would cause it.
+
+* [ ] *Step 17.1: Rename the binary.*
+
+[source,bash]
+----
+sed -i 's|feedback-a-tron|feedback-o-tron|g' docs/AI_INSTALLATION_GUIDE.adoc
+grep -c 'a-tron' docs/AI_INSTALLATION_GUIDE.adoc
+----
+
+Expected: `0`. Note `:290` becomes
+`"/full/path/to/feedback-o-tron/elixir-mcp/feedback-o-tron"`, which looks like
+a typo and is not — the repository and the binary have the same name. Step
+17.5 replaces that block anyway.
+
+* [ ] *Step 17.2: Fix the prerequisites.* Replace `:112-143` with:
+
+[source,asciidoc]
+-----
+==== Step 2: Check Prerequisites
+
+[source,bash]
+----
+elixir --version    # need 1.16 or newer
+erl -version        # need OTP 26 or newer
+git --version
+gh --version        # GitHub CLI - required for the GitHub platform
+----
+
+`gh` is not optional for GitHub. feedback-o-tron reads a token from
+`GITHUB_TOKEN`, then from the gh CLI; without gh, the person has to mint and
+export a personal access token by hand. It is also not available through
+mise, so it must come from the system package manager.
+
+Install Elixir and gh from the distribution first — that is what the project
+tests against and what receives security updates:
+
+[source,bash]
+----
+# Fedora/RHEL
+sudo dnf install elixir erlang gh
+
+# Debian/Ubuntu
+sudo apt install elixir erlang gh
+
+# macOS
+brew install elixir gh
+----
+
+If the distribution's Elixir is older than 1.16, use mise, which the
+repository already configures:
+
+[source,bash]
+----
+mise trust && mise install     # reads mise.toml: erlang 27.0, elixir 1.19.5
+----
+
+asdf works too, but pin the versions rather than tracking `latest`:
+
+[source,bash]
+----
+asdf plugin add erlang && asdf plugin add elixir
+asdf install erlang 27.0 && asdf install elixir 1.19.5-otp-27
+----
+-----
+
+* [ ] *Step 17.3: Fix the build step.* In `:175-193`, `mix escript.build`
+already produces the right name after Step 17.1. Add one line after
+`./feedback-o-tron --version`:
+
+[source,asciidoc]
+-----
+# Should print: feedback-o-tron v1.0.0
+# If it prints "feedback-o-tron vunknown", the escript was built from a
+# stale _build; run `mix clean` and build again.
+-----
+
+`vunknown` is the real failure mode — Task 6 reads the version through
+`Application.spec/2`, which returns `nil` if the application was never loaded.
+
+* [ ] *Step 17.4: Correct the two false lines in the privacy notice.*
+
+[source,bash]
+----
+sed -i 's|^  Tokens are loaded from environment variables only$|  Tokens are read from environment variables first, then from the gh CLI|' \
+    docs/AI_INSTALLATION_GUIDE.adoc
+sed -i 's|^Audit log location: ./audit.jsonl (local, never uploaded)$|Audit log location: $TMPDIR/feedback_a_tron_audit.jsonl (local, never uploaded)|' \
+    docs/AI_INSTALLATION_GUIDE.adoc
+grep -n 'Tokens are read\|Audit log location' docs/AI_INSTALLATION_GUIDE.adoc
+----
+
+Expected: two lines print, at their original positions. If either `sed`
+matches nothing the file has drifted — read the notice and match by hand
+rather than loosening the anchors, because a partly-applied edit to a privacy
+notice is worse than an unapplied one.
+
+* [ ] *Step 17.5: Fix the MCP step.* Replace `:280-303` with:
+
+[source,asciidoc]
+-----
+For Claude Code, register the server with the CLI:
+
+[source,bash]
+----
+claude mcp add feedback-o-tron \
+  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+  -- /full/path/to/feedback-o-tron/elixir-mcp/feedback-o-tron serve
+----
+
+For a host that takes a JSON config file (a project `.mcp.json`, or the
+host's own settings), the stanza is:
+
+[source,json]
+----
+{
+  "mcpServers": {
+    "feedback-o-tron": {
+      "command": "/full/path/to/feedback-o-tron/elixir-mcp/feedback-o-tron",
+      "args": ["serve"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+----
+
+The `mcpServers` wrapper is required; without it the file parses and
+configures nothing. Do not tell people to edit
+`~/.config/claude/mcp_servers.json` — Claude Code does not read that path.
+-----
+
+* [ ] *Step 17.6: Correct the two expected-output blocks.* Both `:80-84` and
+`:319-323` become:
+
+[source]
+----
+✅ Submission <id> completed
+  [DRY RUN] github: Would submit
+----
+
+* [ ] *Step 17.7: Say who types the `y`.* Replace the closing usage block at
+`:329-346` with:
+
+[source,asciidoc]
+-----
+Setup complete. One thing to know before you use it:
+
+`submit` prints the entire payload and waits for a typed "y". The person at
+the keyboard types it — an assistant cannot. With no terminal on stdin the
+command refuses and exits 3:
+
+  stdin is not a terminal; refusing to send without a person's yes
+
+There is no --yes flag. An assistant can draft the report and run it with
+--dry-run, which prints the same payload and sends nothing; the person runs
+the same command without --dry-run when they are happy with it.
+
+  # Safe for an assistant to run: prints the payload, sends nothing
+  ./feedback-o-tron submit --repo "owner/repo" --title "Bug title" \
+    --body "Details" --platform github --dry-run
+
+  # Run by the person: prints the payload, waits for y
+  ./feedback-o-tron submit --repo "owner/repo" --title "Bug title" \
+    --body "Details" --platform github
+
+  # Fedora Bugzilla
+  ./feedback-o-tron submit --repo "Fedora" --title "App crashes" \
+    --body "Details" --platform bugzilla --component "kde" --version "43"
+
+Through MCP, ask the host: "Draft a bug report about the crash in
+maliit-keyboard on Fedora Bugzilla." The MCP door drafts and returns the
+payload; sending is the CLI's job, and the CLI asks a person.
+-----
+
+* [ ] *Step 17.8: Fix the error table.* Replace the `duplicate detected` row
+at `:369-370` and add a `gh` row:
+
+[source,asciidoc]
+-----
+|"duplicate detected"
+|The deduplicator found an existing report. Read it first; if it is genuinely different, change the title so it is.
+
+|"stdin is not a terminal" (exit 3)
+|Correct behaviour, not a fault. The confirm prompt needs a person. Run the command yourself, or add `--dry-run` to preview it.
+
+|"gh: command not found"
+|Install the GitHub CLI from your distribution, or export `GITHUB_TOKEN` directly.
+|===
+-----
+
+* [ ] *Step 17.9: Fix the example conversation.* At `:405-428` the user says
+"I have Elixir via asdf" and the assistant never checks the version. Add one
+turn after it:
+
+[source,text]
+----
+AI: Which version? Run `elixir --version` — anything below 1.16 will not
+compile this project.
+
+User: 1.19.5
+
+AI: Good.
+----
+
+And after the dry-run turn at `:420-424`, add:
+
+[source,text]
+----
+AI: That dry run sent nothing. When you want to file for real, drop
+--dry-run and the command will print the whole payload and wait for you to
+type y. I can draft reports for you, but I can't type that y — with no
+terminal the command refuses.
+----
+
+* [ ] *Step 17.10: Verify.*
+
+[source,bash]
+----
+grep -c 'a-tron' docs/AI_INSTALLATION_GUIDE.adoc
+grep -n 'mcp_servers.json\|--force\|Would submit to\|audit.jsonl\|asdf (recommended)' docs/AI_INSTALLATION_GUIDE.adoc
+grep -c 'mcpServers' docs/AI_INSTALLATION_GUIDE.adoc
+grep -n 'stdin is not a terminal' docs/AI_INSTALLATION_GUIDE.adoc | wc -l
+asciidoctor -o /tmp/guide.html docs/AI_INSTALLATION_GUIDE.adoc && echo "adoc rc=0"
+grep -c '<td' /tmp/guide.html
+----
+
+Expected: NOT REHEARSED (nothing was edited while writing this plan; the nine
+`a-tron` line numbers, the two false privacy lines, the self-contradiction at
+`:422`, and the absent `--force` flag were all read from the tree on
+2026-09-08). First grep prints `0`. Second exits 1 with no output — note
+`audit.jsonl` is in that list because
+`$TMPDIR/feedback_a_tron_audit.jsonl` does not contain the string
+`audit.jsonl` as written, so a match means Step 17.4's second `sed` did not
+apply. `mcpServers` appears once. `stdin is not a terminal` appears twice
+(Step 17.7 and the error table). Count `<td` before and after Step 17.8:
+the error table gains one row and keeps its column count, so the count must
+rise by exactly two.
+
+* [ ] *Step 17.11: Commit.*
+
+[source,bash]
+----
+git add docs/AI_INSTALLATION_GUIDE.adoc
+git commit -F - <<'MSG'
+docs: correct the guide an assistant is asked to follow
+
+The lower half of this file is instructions to an AI assistant about what
+to tell someone, so a wrong line here gets asserted with confidence rather
+than read sceptically. Several were wrong.
+
+The guide disagreed with itself about its own output: Steps 5 and 7 claimed
+"[DRY RUN] github: Would submit to test/repo" while the example
+conversation quoted the real string. cli.ex:163 prints no suffix.
+
+Two lines of the privacy notice were false. The audit log is not
+./audit.jsonl — audit_log.ex writes feedback_a_tron_audit.jsonl into
+System.tmp_dir!(), so the guide pointed at the working directory while the
+file sat in a world-readable /tmp. And tokens are not read "from
+environment variables only": the GitHub reader falls back to the gh CLI's
+hosts.yml, a file on disk. The rest of the notice is unchanged and still
+true, including that feedback-o-tron writes no tokens itself.
+
+gh is now a listed prerequisite. It is required for the GitHub path, it is
+what `just doctor` probes, and it is not in the mise registry, so no
+toolchain file can supply it. Distribution packages now come first and asdf
+is no longer labelled "recommended".
+
+The MCP stanza had the same three defects as the README's: no mcpServers
+wrapper, a config path Claude Code does not read, and the deprecated
+--mcp-server spelling.
+
+Dropped the --force row: no version of this CLI has parsed that flag.
+
+Added what the guide never said — the confirm prompt is typed by the
+person, an assistant cannot type it, and a submit with no terminal exits 3.
+That omission is the most likely first bug report about this project, and
+this file is what would have caused it.
+MSG
+----
+
+== Task 18: The engine README is a different project's; the smoke test has never run
+
+*Files:*
+
+* Rewrite: `elixir-mcp/README.adoc` (381 lines, wholesale)
+* Modify: `elixir-mcp/scripts/mcp_tcp_smoke_test.sh:5-6`, `:14-15`
+
+*Interfaces:*
+
+* Consumes: `serve` and its flags (Task 6), the doors (Task 4), the escript
+  name (Task 9), the TCP transport in `mcp/server.ex:76-95`.
+* Produces: nothing another task consumes.
+
+=== Why it is broken
+
+`elixir-mcp/README.adoc` is not this project's README. It is the *Observatory*
+project's README, committed here with a handful of environment-variable names
+substituted. This is not an inference from tone — every identifying detail in
+it names the other project:
+
+* Line 1 is `== Observatory`, and lines 3-4 describe a "GitHub Intelligence
+  Platform" for tracking and visualising GitHub activity.
+* Line 24 tells the reader to `git clone https://gitlab.com/jdajewell/observatory`
+  and line 25 to `cd observatory`.
+* Line 42 runs `./gh-manage --mcp-server`, and line 65 configures MCP with
+  `"command": "/path/to/gh-manage"` under the server name `"observatory"`.
+  `gh-manage` is the same foreign binary the Containerfile copied
+  (Task 13) — so that was not a typo either; both files came from the same
+  other project.
+* Lines 157-163 document `OBSERVATORY_DEFAULT_REPO`, `OBSERVATORY_SQLITE_PATH`
+  and `OBSERVATORY_POLL_INTERVAL`. `grep -rn 'OBSERVATORY_' elixir-mcp/lib/`
+  finds none of them.
+* Lines 114-155 configure the project in Nickel, against
+  `anthropics/claude-code`; lines 191-232 document Datalog analysis rules;
+  lines 234-261 document a Julia analytics module ending in
+  `julia analytics/src/Observatory.jl serve 8787`. None of it exists in this
+  repository, and 8787 is an 8080-class port the estate doctrine excludes.
+* Line 277 publishes `-p 8080:8080`, which is neither this project's port
+  (7722, Task 13) nor allowed by that doctrine.
+* Lines 281 and 295 are two consecutive `==== Guix` headings — the file has a
+  duplicated section, which is the usual signature of a bad copy.
+
+Patching this file would mean rewriting every section, so Step 18.1 replaces
+it. The engine README's job in SP1b is small and specific: the root README
+(Task 16) is for the person installing the tool, and this one is for someone
+standing in `elixir-mcp/` about to run `mix`.
+
+`scripts/mcp_tcp_smoke_test.sh` has never run on a normal machine, and there
+are two independent reasons, both measured on 2026-09-08:
+
+. *Line 6 dereferences an unset variable under `set -u`.* The script sets
+  `set -euo pipefail` on line 2, then line 6 is
+  `payload=${MCP_PAYLOAD:-"$HYPATIA_TMPDIR/mcp-submit-feedback.json"}`. The
+  `:-` default guards `MCP_PAYLOAD`, not `HYPATIA_TMPDIR`, so with
+  `HYPATIA_TMPDIR` unset the expansion aborts the script before it writes
+  anything. Rehearsed, with a positive control:
++
+[source]
+----
+$ echo "[${HYPATIA_TMPDIR:-UNSET}]"
+[UNSET]
+$ bash -c 'set -euo pipefail; payload=${MCP_PAYLOAD:-"$HYPATIA_TMPDIR/mcp-submit-feedback.json"}; echo "reached: $payload"'
+bash: line 1: HYPATIA_TMPDIR: unbound variable
+rc=1
+$ HYPATIA_TMPDIR=/tmp bash -c 'set -euo pipefail; payload=${MCP_PAYLOAD:-"$HYPATIA_TMPDIR/mcp-submit-feedback.json"}; echo "reached: $payload"'
+reached: /tmp/mcp-submit-feedback.json
+rc=0
+----
++
+The control matters: without it, "the script fails" is equally consistent
+with the script being fine and the harness being broken.
+
+. *Line 5's port is wrong, and `nc` is not installed.*
+  `port=${MCP_PORT:-844}` — the transport's default is *7979*
+  (`mcp/server.ex:81`: `parse_int(env_port) || Keyword.get(opts, :tcp_port,
+  7979)`). 844 is also privileged, so nothing unprivileged could have been
+  listening there. And `command -v nc` finds nothing on this host, so line 15
+  would fail even with the port corrected.
+
+`README.adoc:50-51` propagates the same 844, while `:46-47` correctly says the
+bind defaults to `127.0.0.1:7979` — the file contradicts itself six lines
+apart, which is how the wrong number reached the root README too (Task 16).
+
+* [ ] *Step 18.1: Replace `elixir-mcp/README.adoc` wholesale.*
+
+[source,asciidoc]
+-----
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= feedback-o-tron engine
+:toc: macro
+:toclevels: 2
+
+The Elixir/OTP engine behind feedback-o-tron. If you are installing the tool
+rather than working on it, read the repository root's `README.adoc` instead.
+
+toc::[]
+
+== Build
+
+[source,bash]
+----
+mix deps.get
+mix escript.build          # produces ./feedback-o-tron
+./feedback-o-tron --version
+----
+
+Requires Elixir 1.16 or newer on OTP 26 or newer. CI tests 1.15, 1.16 and
+1.17 on OTP 26, plus 1.19 on OTP 27, which is what this engine is developed
+against.
+
+== Run
+
+[source,bash]
+----
+./feedback-o-tron serve
+----
+
+`serve` runs everything in one OS process and opens two doors:
+
+[cols="1,3"]
+|===
+|Door |What it is
+
+|MCP (stdin/stdout)
+|JSON-RPC 2.0 for MCP hosts. The process exits when stdin closes, so a host
+that goes away leaves no orphan.
+
+|HTTP intake
+|`127.0.0.1:7722`. `GET /health` answers
+`{"status":"ok","service":"feedback-o-tron","intake":"http"}`.
+|===
+
+Close either with `--no-stdio` or `--no-http`; closing both is an error.
+`--http-port N` moves the intake.
+
+`FeedbackATron.Doors.config/2` is the single place that decides which doors
+open. It reads application environment first, then OS environment:
+`FEEDBACK_O_TRON_MCP`, `FEEDBACK_O_TRON_HTTP`, `FEEDBACK_O_TRON_HTTP_PORT`,
+`FEEDBACK_O_TRON_HTTP_BIND`.
+
+== The TCP transport
+
+An optional third door, off by default, for hosts that speak line-delimited
+JSON-RPC over a socket rather than over stdio:
+
+[source,bash]
+----
+FEEDBACK_A_TRON_MCP_TCP=1 ./feedback-o-tron serve
+----
+
+It binds `127.0.0.1:7979`. `FEEDBACK_A_TRON_MCP_TCP_PORT` and
+`FEEDBACK_A_TRON_MCP_TCP_BIND` change that.
+
+NOTE: These three names keep the older `A_TRON` spelling because that is what
+`mcp/server.ex` reads. Renaming the `FeedbackATron` namespace is a separate,
+mechanical follow-up; until it lands, this document prints the names the code
+actually looks for.
+
+Smoke-test it with `scripts/mcp_tcp_smoke_test.sh`, which needs `nc`
+installed and the server already running.
+
+== Tools the MCP door offers
+
+Three, registered in `application.ex`:
+
+[cols="1,3"]
+|===
+|Tool |What it does
+
+|`submit_feedback`
+|Draft and (outside SP1b) submit a report to one or more platforms.
+
+|`research_feedback`
+|Look for existing reports before filing a new one.
+
+|`synthesize_feedback`
+|Turn a rough description into a structured report.
+|===
+
+`migration_observe` is implemented under `mcp/tools/` but is *not* registered,
+so it does not appear in `tools/list`. Treat it as unwired.
+
+== Nothing sends without a person
+
+`submit` prints the entire payload and waits for a typed `y`. With no
+terminal on stdin it refuses and exits 3. There is no `--yes` flag. Use
+`--dry-run` to print the payload and send nothing.
+
+The MCP and HTTP doors accept and draft reports; they do not send.
+
+== Test
+
+[source,bash]
+----
+mix test                   # unit tests
+mix escript.build && mix test --only escript   # end-to-end, against the binary
+mix format --check-formatted
+mix compile --warnings-as-errors
+----
+
+The `:escript` tag is excluded by default (`test/test_helper.exs`) because
+those tests exec a binary that may not be built.
+
+== Layout
+
+....
+lib/feedback_a_tron/
+├── cli.ex                 # argv parsing, run/2, exit codes
+├── doors.ex               # which doors open
+├── submitter.ex           # platform dispatch, dedupe, rate limiting
+├── credentials.ex         # env, then the gh CLI
+├── audit_log.ex           # JSON-lines audit trail
+├── mcp/
+│   ├── server.ex          # JSON-RPC over stdio and optional TCP
+│   └── tools/             # the three registered tools, plus migration_observe
+└── http_intake/
+    └── router.ex          # Plug router: /health, /api/v1/*
+....
+
+== License
+
+Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
+Code is MPL-2.0; this document is CC-BY-SA-4.0.
+-----
+
+* [ ] *Step 18.2: Fix the smoke test.* Replace lines 4-6 and 14-15:
+
+[source,bash]
+----
+host=${MCP_HOST:-127.0.0.1}
+port=${MCP_PORT:-7979}
+payload=${MCP_PAYLOAD:-"${TMPDIR:-/tmp}/fot-mcp-smoke.json"}
+
+command -v nc >/dev/null 2>&1 || {
+    echo "mcp_tcp_smoke_test: nc not found; install netcat" >&2
+    exit 2
+}
+----
+
+and at the end:
+
+[source,bash]
+----
+# Line-delimited JSON-RPC over TCP
+nc "$host" "$port" < "$payload"
+----
+
+`${TMPDIR:-/tmp}` is the correction that matters: it defaults the variable
+that was actually unset, rather than defaulting a different one and leaving
+`$HYPATIA_TMPDIR` bare inside the expansion. Keep `set -euo pipefail` — the
+bug was never `-u`, it was dereferencing an unguarded name under it.
+
+* [ ] *Step 18.3: Verify.*
+
+[source,bash]
+----
+bash -n elixir-mcp/scripts/mcp_tcp_smoke_test.sh && echo "syntax rc=0"
+env -u HYPATIA_TMPDIR bash -c 'set -euo pipefail; . /dev/stdin' \
+    < <(sed -n '4,6p' elixir-mcp/scripts/mcp_tcp_smoke_test.sh) && echo "expansion rc=0"
+grep -n '844\|HYPATIA_TMPDIR' elixir-mcp/scripts/mcp_tcp_smoke_test.sh; echo "grep rc=$?"
+grep -rn 'Observatory\|gh-manage\|8080\|8787\|OBSERVATORY_' elixir-mcp/README.adoc; echo "grep rc=$?"
+asciidoctor -o /tmp/engine.html elixir-mcp/README.adoc && echo "adoc rc=0"
+----
+
+Expected: NOT REHEARSED as a whole (no file was edited while writing this
+plan), except the `HYPATIA_TMPDIR` expansion failure and its positive
+control, which were rehearsed above and are quoted verbatim. `bash -n` exits
+0; the expansion of lines 4-6 exits 0 with `HYPATIA_TMPDIR` explicitly
+removed from the environment; both greps exit 1 with no output.
+
+The end-to-end run is deliberately *not* a verify step here. It needs `nc`
+installed, which this host lacks, and a running server with
+`FEEDBACK_A_TRON_MCP_TCP=1`. Claiming a PASS for it would be claiming a green
+from a gate that never ran.
+
+* [ ] *Step 18.4: Commit.*
+
+[source,bash]
+----
+git add elixir-mcp/README.adoc elixir-mcp/scripts/mcp_tcp_smoke_test.sh
+git commit -F - <<'MSG'
+docs: replace the engine README, which described another project
+
+elixir-mcp/README.adoc was the Observatory project's README with a few
+env-var names substituted. It told the reader to clone
+gitlab.com/jdajewell/observatory, run ./gh-manage --mcp-server, and
+configure an MCP server named "observatory"; it documented OBSERVATORY_*
+variables that appear nowhere in lib/, a Nickel config against
+anthropics/claude-code, Datalog rules, a Julia analytics module on 8787,
+a container publishing 8080, and two consecutive ==== Guix headings.
+
+That also explains the Containerfile copying a gh_manage release: both
+files came from the same other project.
+
+Replaced with a short engine README: build, serve and its two doors, the
+optional TCP transport on 7979, the three registered MCP tools (noting
+migration_observe is not registered), the confirm gate, and how to run the
+tests.
+
+scripts/mcp_tcp_smoke_test.sh could not run anywhere. Under set -u its
+payload line dereferenced $HYPATIA_TMPDIR, guarding MCP_PAYLOAD with :-
+but leaving HYPATIA_TMPDIR bare, so the script aborted with "unbound
+variable" before writing anything. Its default port was 844; the transport
+listens on 7979. It now defaults TMPDIR, uses the right port, and checks
+for nc rather than failing obscurely without it.
+MSG
+----
+
+
+== Task 19: The manifest an AI reads first
+
+*Files:*
+
+* Modify: `0-AI-MANIFEST.a2ml:118`, `:133-146`, `:151`
+
+*Interfaces:*
+
+* Consumes: the binary name `feedback-o-tron` (Task 9) and the `serve`
+  subcommand (Task 6).
+* Produces: the one file an assistant is most likely to open before anything
+  else. Task 20's rehearsal follows the README, not this file, so nothing
+  downstream depends on it — which is exactly why it has been wrong for
+  seven months without anyone noticing.
+
+NOTE: *This task is a stated widening of the approved plan.* The plan
+approved on 2026-09-08 lists Tasks 11-19 with the stranger rehearsal as the
+last of them, and records this file nowhere. It is added because the owner's
+brief for SP1b is that any assistant should be able to act on "install
+hyperpolymath's FoT please", and `0-AI-MANIFEST.a2ml` is the file whose
+leading `0-` exists to make it sort first for exactly that assistant. Fixing
+the README while leaving the AI manifest pointing at a binary that no longer
+exists would leave the brief's own use case broken. If you want the executed
+plan to match the approval exactly, drop this task: nothing else in the plan
+consumes it, and the closing section already records the defect.
+
+=== Why it is broken
+
+The manifest carries the same four defects Task 17 removes from the
+installation guide, in one nine-line block at `:133-146`:
+
+[source,json]
+----
+Configure in `~/.config/claude/mcp_servers.json`:
+
+{
+  "feedback-o-tron": {
+    "command": "/path/to/feedback-a-tron",
+    "args": ["--mcp-server"],
+    "env": {
+      "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+      "BUGZILLA_API_KEY": "${BUGZILLA_API_KEY}"
+    }
+  }
+}
+----
+
+. *No `mcpServers` wrapper.* The object's only key is the server name, so a
+  host that reads this file parses it successfully and configures nothing.
+  The canonical shape is the one verified against
+  `hyper-repos/boj-server/.mcp.json` and used in Task 17.
+. *`~/.config/claude/mcp_servers.json` is not a path Claude Code reads.* It
+  does not exist on the owner's host and `mcp_servers.json` is found nowhere
+  on it. The current interface is
+  `claude mcp add <name> [-e KEY=value] -- <command> [args]`.
+. *`args: ["--mcp-server"]`* is the spelling Task 6 demotes to a deprecated
+  alias that prints a warning to stderr on every start — which is where MCP
+  hosts look for crash output.
+. *`command: "/path/to/feedback-a-tron"`* names a binary that does not exist
+  after Task 9 and does not exist now: `mix escript.build` today produces
+  `feedback_a_tron` (underscores), and Task 9 makes it `feedback-o-tron`.
+  Neither spelling is `feedback-a-tron`.
+
+The same stale binary name appears twice more, at `:118`
+(`./feedback-a-tron submit --dry-run ...`) and `:151` (the standalone CLI
+example).
+
+Two other claims in the file were checked and are *correct* — do not
+"`fix`" them:
+
+* `FeedbackATron.Submitter.submit/1` (`:158-162`) exists at
+  `elixir-mcp/lib/feedback_a_tron/submitter.ex:3`.
+* `test/submitter_test.exs` (`:109`) exists.
+
+One claim is stale but harmless and is left alone: `:124` says "Verify all 26
+tests still pass". The suite is 272 `test` blocks across 22 files. It is not
+corrected here because the number will be stale again after Task 1 and Task
+10 add tests, and a count that has to be maintained by hand is a defect
+generator; the manifest should say `mix test`, which it already does at
+`:117`.
+
+* [ ] *Step 19.1: Replace the MCP integration block.*
+
+Replace `0-AI-MANIFEST.a2ml:133-146` — from the line
+`Configure in ~/.config/claude/mcp_servers.json:` through the closing fence
+of that JSON block — with:
+
+[source,markdown]
+----
+Register the server with the host's own CLI. For Claude Code:
+
+```bash
+claude mcp add feedback-o-tron -e GITHUB_TOKEN=$GITHUB_TOKEN \
+    -- /full/path/to/feedback-o-tron/elixir-mcp/feedback-o-tron serve
+```
+
+For a host that takes a JSON config file (a project `.mcp.json`, or the
+host's own settings file), the stanza is:
+
+```json
+{
+  "mcpServers": {
+    "feedback-o-tron": {
+      "command": "/full/path/to/feedback-o-tron/elixir-mcp/feedback-o-tron",
+      "args": ["serve"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+The `mcpServers` wrapper is required. Without it the file parses and
+configures nothing.
+----
+
+`BUGZILLA_API_KEY` is dropped from the example rather than carried over:
+the Bugzilla channel reads it at submission time, and an MCP stanza that
+lists every optional credential invites a person to paste secrets into a
+file they then commit. The env block shows the one token the GitHub path
+needs; the others are documented where they are used.
+
+* [ ] *Step 19.2: Fix the two binary names.*
+
+[source,bash]
+----
+sed -i 's|\./feedback-a-tron|./feedback-o-tron|g' 0-AI-MANIFEST.a2ml
+----
+
+That is `:118` and `:151`. The `sed` is anchored on `./` so it cannot touch
+the `feedback_a_tron` module directory paths elsewhere in the file, which
+are correct and stay.
+
+* [ ] *Step 19.3: Verify.*
+
+[source,bash]
+----
+grep -n 'a-tron' 0-AI-MANIFEST.a2ml; echo "a-tron rc=$?"
+grep -n 'mcp_servers.json\|--mcp-server' 0-AI-MANIFEST.a2ml; echo "stale rc=$?"
+grep -c 'mcpServers' 0-AI-MANIFEST.a2ml
+python3 - <<'PY'
+import json,re
+src = open('0-AI-MANIFEST.a2ml').read()
+blocks = re.findall(r'```json\n(.*?)\n```', src, re.S)
+assert blocks, "no json block found — the fence style changed"
+for b in blocks:
+    d = json.loads(b)
+    assert "mcpServers" in d, f"missing mcpServers wrapper: {list(d)}"
+    e = d["mcpServers"]["feedback-o-tron"]
+    assert e["args"] == ["serve"], e["args"]
+    assert e["command"].endswith("feedback-o-tron"), e["command"]
+print(f"{len(blocks)} json block(s) OK")
+PY
+----
+
+Expected: NOT REHEARSED (no file was modified while writing this plan). The
+first two greps exit 1 with no output. `mcpServers` appears once. The python
+check prints `1 json block(s) OK`.
+
+The python check is there because the failure this task fixes — a stanza that
+is valid JSON and configures nothing — is invisible to a grep and to a JSON
+parser alike. Only an assertion on the *shape* catches it, which is why the
+defect survived seven months in a file whose whole purpose is to be read.
+
+* [ ] *Step 19.4: Commit.*
+
+[source,bash]
+----
+git add 0-AI-MANIFEST.a2ml
+git commit -F - <<'MSG'
+docs: correct the MCP stanza and binary name in the AI manifest
+
+0-AI-MANIFEST.a2ml is named to sort first so that an assistant opens it
+first. Its MCP integration block was wrong in four ways at once: no
+mcpServers wrapper, so a host parses it and configures nothing; a
+~/.config/claude/mcp_servers.json path that Claude Code does not read;
+args ["--mcp-server"], which is now a deprecated alias that warns on
+stderr; and a command naming a binary, feedback-a-tron, that neither the
+current build nor the renamed one produces.
+
+Replaced with `claude mcp add` plus a correctly wrapped JSON stanza, and
+the two ./feedback-a-tron CLI examples renamed. The verify step asserts
+on the parsed shape, not on a grep: a stanza missing its wrapper is valid
+JSON and configures nothing, which is how this survived unnoticed.
+MSG
+----
+== Task 20: The stranger rehearsal — the acceptance test for SP1b
+
+[IMPORTANT]
+====
+*No part of this task may be executed by an agent.* Step 20.5 sends a real
+issue to a real repository, and the confirm gate (Task 7) exists precisely so
+that a person decides that. The owner runs every step here, at a terminal.
+An assistant may read the transcript afterwards and act on what it says.
+====
+
+*Files:* none. This task changes nothing; it is the test of everything
+Tasks 1-18 changed.
+
+*Interfaces:*
+
+* Consumes: the root `README.adoc` as Task 16 leaves it — and nothing else.
+  If a step here needs a fact that is not in the README, that is the finding.
+* Produces: a verdict on the SP1b acceptance criterion, and one closed issue.
+
+=== What is being tested
+
+The SP1b acceptance criterion is one sentence: *a stranger files one useful
+report by following the README.* Every earlier task is an argument that this
+will now work. This is the experiment.
+
+The container matters because it removes the thing that makes local testing
+lie: the owner's machine already has Elixir on `PATH`, a `gh` session, a
+built `_build`, and eighteen years of accumulated configuration. A fresh
+`fedora:42` has none of that, so it fails wherever the README assumes
+something it never told the reader to install.
+
+The rule for the run: *follow the README literally and do not repair it in
+your head.* If a command does not work as printed, that is the result. Write
+down what it printed and keep going. The temptation to silently substitute
+the command you know is correct is the single thing that would make this test
+worthless.
+
+* [ ] *Step 20.1: Start a clean container.*
+
+[source,bash]
+----
+podman run -it --rm --name fot-stranger fedora:42 /bin/bash
+----
+
+(podman 5.4.2 is present on the owner's host.) Everything from here runs
+inside that shell. `--rm` is deliberate: a second attempt should start from
+nothing, not from a half-repaired first attempt.
+
+* [ ] *Step 20.2: Follow the README's install route, and only that.*
+
+Open `README.adoc` from the repository, and do exactly what its Quick Start
+says: install the prerequisites it names, clone, build, and run
+`./feedback-o-tron --version`.
+
+Record, for each command:
+
+* the command as printed in the README,
+* whether it succeeded,
+* what it printed if it did not.
+
+The container starts with no `git`, no `elixir` and no `gh`. That is the
+point — the README has to say so. If the reader has to already know to
+`dnf install git` before the clone step works, the README is missing a line
+and this step has found it.
+
+* [ ] *Step 20.3: Authenticate the way the README says.*
+
+`gh auth login` inside a container with no keyring writes the token into
+`~/.config/gh/hosts.yml`, so the container exercises the *file* path.
+
+[WARNING]
+====
+This means the container cannot reproduce the failure Task 8 fixes. On the
+owner's desktop, gh stores the token in the system keyring and `hosts.yml`
+has no `oauth_token` at all — verified on 2026-09-08:
+
+[source]
+----
+$ gh auth status
+  ✓ Logged in to github.com account hyperpolymath (keyring)
+    Token: gho_****
+$ grep -c 'oauth_token' ~/.config/gh/hosts.yml
+0            # rc=1: the key is absent
+----
+
+The `users:` block in that file is empty. So the desktop path is the one that
+was broken, and the container will pass it either way. Test the desktop path
+separately in Step 20.7 — a green here is not evidence about it.
+====
+
+* [ ] *Step 20.4: Draft the report with `--dry-run`.*
+
+The report must be a real one. The bugs found while writing this plan are all
+being fixed by it, so use whatever the run itself turned up in Step 20.2 —
+a missing prerequisite, a command that printed something the README did not
+predict. If Step 20.2 went perfectly, report that: "followed the README on a
+clean Fedora 42 container, every step worked, here is the transcript" is a
+useful report and an honest one.
+
+[source,bash]
+----
+./feedback-o-tron submit \
+  --repo "hyperpolymath/feedback-o-tron" \
+  --title "[stranger test] <what actually happened>" \
+  --body "<the transcript, or what was missing>" \
+  --platform github \
+  --dry-run
+----
+
+Expected: the whole payload, then `  [DRY RUN] github: Would submit`, and
+nothing sent. Check the printed payload contains no path, hostname or token
+from the container before going on.
+
+* [ ] *Step 20.5: Send it. This step is the owner's, at a keyboard.*
+
+Same command, without `--dry-run`. The CLI prints the entire payload and
+waits. Read it, then type `y`.
+
+[source]
+----
+Send this to github? [y/N]
+----
+
+Anything other than `y` sends nothing. There is no `--yes`, and no flag that
+skips this.
+
+* [ ] *Step 20.6: Close it, and record the number.*
+
+[source,bash]
+----
+gh issue list --repo hyperpolymath/feedback-o-tron --limit 5
+gh issue close <N> --repo hyperpolymath/feedback-o-tron \
+  --comment "Stranger-test rehearsal for SP1b. Closing immediately."
+----
+
+*Assert on the title prefix only.* The issue must be titled
+`[stranger test] …`. Do not assert on labels: `POST /issues` silently drops a
+`labels` array from a sender without push access, so a genuine stranger's
+report arrives unlabelled. A label assertion would be a check that passes for
+the owner and fails for exactly the person this test is named after. Apply
+the `stranger-test` label afterwards by hand if it is wanted for filtering.
+
+NOTE: the repository has issue forms at `.github/ISSUE_TEMPLATE/bug.yml` and
+`feature.yml`. They do not apply here — issue forms shape the web UI, and
+`POST /issues` bypasses them. `config.yml` has `blank_issues_enabled: true`,
+so nothing is being circumvented.
+
+* [ ] *Step 20.7: Repeat the credential step on the host, outside the
+container.*
+
+On the owner's desktop, with the keyring session that Step 20.3 quotes:
+
+[source,bash]
+----
+cd elixir-mcp
+./feedback-o-tron submit --repo "hyperpolymath/feedback-o-tron" \
+  --title "[stranger test] keyring path" --body "checking credential lookup" \
+  --platform github --dry-run
+----
+
+Expected: the payload prints and the dry run completes. If it fails with a
+missing-credential error, Task 8 did not land correctly — that is the exact
+case it exists for, and the container could not have told you.
+
+* [ ] *Step 20.8: Write the verdict into the PR.*
+
+Not a commit — a comment on the SP1b PR, with:
+
+* the container transcript, verbatim, including anything that failed;
+* the issue number and its title;
+* whether Step 20.7 passed;
+* for each README step that did not work as printed, one line saying what it
+  printed.
+
+If any step failed, SP1b is not done. The acceptance criterion is not "the
+code is written", it is "a stranger got through it".
+
+== Noticed, not in this plan
+
+Everything below was measured in the worktree on 2026-09-08 while writing
+this plan. None of it is fixed here, and none of it blocks SP1b. It is
+written down because the alternative to writing it down is finding it again.
+
+Each entry says what is wrong, what it costs, and what the repair is — so
+that whoever picks one up starts from evidence rather than from a hunch.
+
+=== The Dialyzer job is a required-looking check that cannot fail
+
+`.github/workflows/elixir-ci.yml:87-146` defines a job named `Dialyzer`
+whose only real step is `run: mix dialyzer` with `continue-on-error: true`.
+`dialyxir` is not in `elixir-mcp/mix.exs`'s `deps/0`; it appears in this tree
+only inside `elixir-mcp/deps/*/mix.exs`, which are other packages' own
+dev-dependency lists and are never fetched. So the step runs, exits 1 with
+`** (Mix) The task "dialyzer" could not be found`, and `continue-on-error`
+reports it as a success. The check has been green on every PR while running
+no static analysis at all. Task 15 carries the full measurement.
+
+One thing changes the cost of the repair, and it was measured after Task 15
+was written. The workflow's own header comment (lines 9-12) says "Dialyzer is
+a REQUIRED status check, so it must report on every PR", and that is what the
+`continue-on-error` shim exists to satisfy. It is no longer true. The
+`Optimus-Branch` ruleset on the default branch requires exactly three
+contexts:
+
+[source]
+----
+CodeQL
+CodeRabbit
+governance / Code quality + docs
+----
+
+`Dialyzer` is not among them. Dropping `continue-on-error: true` therefore
+cannot block a merge — the check is not required, so a red one is advisory.
+The shim is guarding a constraint that no longer exists.
+
+Two repairs, in increasing order of honesty:
+
+. *Delete the job.* One line in `mix.exs` less to maintain, and no check that
+  claims to do something it does not. This is the right answer if nobody
+  intends to act on Dialyzer output.
+. *Make it real.* Add `{:dialyxir, "~> 1.4", only: [:dev, :test], runtime:
+  false}` to `deps/0`, add a PLT cache step (the PLT build dominates the
+  runtime; without caching the job takes minutes on every run), and drop
+  `continue-on-error`. Expect a first run that is red: this codebase has
+  never been type-checked, and Dialyzer's opening report on an unseen
+  codebase is not usually empty. That red-to-green is its own PR.
+
+Do not do the third thing, which is to leave the shim and add dialyxir: that
+produces a job that runs real analysis and still cannot fail, which is worse
+than either arm because it looks like it works.
+
+=== `MigrationObserver` is built but never reachable
+
+`elixir-mcp/lib/feedback_a_tron/mcp/tools/migration_observe.ex` defines a
+tool. `application.ex:60-77` (`maybe_add_mcp_server`) registers exactly
+three: `SubmitFeedback`, `ResearchFeedback`, `SynthesizeFeedback`. An MCP
+host therefore never sees `migration_observe` in `tools/list`, and cannot
+call it.
+
+Separately, `application.ex:160` gates the migration-observer GenStage
+process on `env_on? || Enum.any?(System.argv(), &(&1 == "--migration-observer"))`.
+After Task 6 the CLI owns `System.argv()` and the supported entry point is
+`feedback-o-tron serve`; an argv gate reading a flag that the CLI does not
+parse is a second way to reach code that no documented invocation reaches.
+
+The repair is a decision, not a patch: either wire the tool into the
+registration list and give the observer a real switch, or delete both. It
+was left out of SP1b because SP1b's job is that the product runs, and an
+unreferenced tool does not stop it running.
+
+=== `security.txt` points at a file that does not exist
+
+`.well-known/security.txt:9`:
+
+[source]
+----
+Policy: https://github.com/hyperpolymath/feedback-o-tron/blob/main/SECURITY.md
+----
+
+There is no `SECURITY.md` in this repository. The policy is `SECURITY.adoc`,
+per the estate's AsciiDoc rule. A researcher following the advertised policy
+link gets a 404 from the one file whose entire purpose is to be followed in
+an emergency.
+
+One-line repair: `.md` becomes `.adoc`. It is not in this plan only because
+it is unrelated to making the product runnable; it is the highest
+value-per-character fix in this list and should be picked up next.
+
+=== The Copilot agent config violates the estate's Bun rule
+
+`.github/copilot/coding-agent.yml:3-4`:
+
+[source,yaml]
+----
+    command: npx
+    args: ["-y", "@hyperpolymath/boj-server@latest"]
+----
+
+`npx` is Node's runner. The estate rule is Bun only, so this is a policy
+violation in a file that no gate reads. `@latest` is a second problem
+independent of the first: an unpinned tag means the agent's behaviour can
+change without a commit to this repository.
+
+The obvious repair — `bunx` in place of `npx` — was *not* verified, and
+should not be applied on the strength of this note alone. Whether
+`@hyperpolymath/boj-server` is published in a form `bunx` resolves was not
+checked, and `boj-server` also has a running-service route
+(`BOJ_URL: http://localhost:7700`) that may make the package invocation the
+wrong shape entirely. Establish which before editing.
+
+=== `a-tron` survives in three documents and one config pair
+
+Task 9 renames the user-facing surfaces and Tasks 16-19 rewrite the
+documents a stranger or an assistant reads. These are the literal `a-tron`
+occurrences left afterwards, counted on 2026-09-08:
+
+[cols="2,1,3"]
+|===
+|File |Count |Why it is not in this plan
+
+|`docs/LANDSCAPE.adoc`
+|9
+|A prose survey of comparable tools; no reader follows it to run anything.
+
+|`docs/CITATIONS.adoc`
+|8
+|Bibliographic. Some entries may be citing the old name *as* the old name,
+ so a blind `sed` would falsify a citation. Needs reading, not replacing.
+
+|`config/schema.ncl`
+|4
+|Nickel schema. Nothing in `lib/` reads the Nickel configuration; Task 12
+ removes the toolchain's claim to it, but the files stay.
+
+|`config/example.ncl`
+|3
+|Same. Includes a `~/.config/feedback-a-tron/` path that no code reads.
+
+|`scripts/scraper.exs`
+|3
+|Not used by the release; Task 13 stops the container copying `scripts/`.
+
+|`.editorconfig`
+|1
+|A comment on line 1. Cosmetic.
+|===
+
+`packaging/guix/packages.scm` (19) is deleted by Task 12 and so is not
+listed. The counts are of the literal string `a-tron`; the module namespace
+is separate and is the next entry.
+
+=== The `FeedbackATron` namespace rename
+
+74 files under `elixir-mcp/lib/` and `elixir-mcp/test/` contain
+`FeedbackATron`, and the OTP application is `:feedback_a_tron`. Per the
+owner's ruling of 2026-09-07 the rename is a *mechanical follow-up after
+SP1b*, deliberately not folded into it: it touches every file in the engine,
+so doing it inside SP1b would bury this plan's behavioural changes in a
+diff of pure renaming and make review impossible.
+
+Two things must move together when it happens, and neither is optional:
+
+* `mix.exs:83-88` declares the release `feedback_a_tron`. Task 13's
+  `Containerfile` copies `_build/prod/rel/feedback_a_tron` and its
+  `ENTRYPOINT` and `HEALTHCHECK` name `bin/feedback_a_tron`. All four move
+  in the same commit or the image stops building.
+* `mcp/server.ex` reads `FEEDBACK_A_TRON_MCP_TCP` and
+  `FEEDBACK_A_TRON_MCP_TCP_PORT`. Task 4's `Doors.config/2` already accepts
+  new names first and falls back to the old, so the OS-env half of the
+  rename has a compatibility path; the TCP transport does not, and needs
+  one.
+
+=== `elixir-mcp/ARCHITECTURE.adoc` is still largely Observatory's
+
+Task 14 replaces the Packaging section (lines 750-932), which is the part
+that misleads about how this project is built. The rest of the file is
+untouched, and the rest of the file is substantial: it opens at line 5 by
+identifying itself as the "`Observatory`" GitHub Intelligence Platform.
+
+Observatory content surviving Task 14, at pre-splice line numbers:
+
+[cols="1,4"]
+|===
+|Lines |What is there
+
+|5, 13
+|The document identifies itself as Observatory and heads a section
+ "Original Vision (Observatory — Future)".
+
+|81, 139, 172, 201
+|An RDF prefix `https://observatory.local/github#`, a Nickel config named
+ `observatory.ncl` with an `observatory.db` path, and an
+ `OBSERVATORY_GITHUB_TOKEN` flattening rule.
+
+|177, 185
+|`webhook_port` defaulting to 8080 and `http_port` to 8787 — both in the
+ 8080 class the estate's network-hardening doctrine forbids, and neither
+ read by any code in `lib/`.
+
+|213, 214, 286
+|A Julia analytics module, `module Observatory`, and
+ `function serve(port::Int=8787)`.
+
+|367
+|A React component with `className="observatory"`.
+
+|392, 603
+|`lib/gh_manage/scraper.ex` and `lib/gh_manage/subscriptions.ex` — source
+ paths from the other project, inside Elixir code listings.
+
+|958
+|A "What's Built vs TODO" row: "Implement Observatory.jl".
+|===
+
+The provenance is not a mystery and is worth recording once: this file,
+`elixir-mcp/README.adoc` (Task 18) and `packaging/Containerfile` (Task 13)
+were all copied from the Observatory project, which is why `gh_manage`
+appears in three unrelated places. They are one import, not three typos.
+
+The repair is to decide what this document is for. It is 993 lines
+describing a system that was never built here. Either it becomes an
+architecture document for the engine that exists — which is mostly deletion
+— or it is archived under a name that says it is somebody else's design.
+Rewriting it was out of scope for SP1b because nothing executes it.
+
+=== Two `contractile.just` gates pass because they measure nothing
+
+Both were run by hand in the worktree; both exit 0; neither can fail as
+written.
+
+*`must-spdx-headers`* (`contractile.just:48-49`) is:
+
+[source,bash]
+----
+find . -name '*.rs' -o -name '*.res' -o -name '*.gleam' | head -20 \
+  | xargs -r grep -L 'SPDX-License-Identifier' | wc -l | grep -q '^0'
+----
+
+This repository contains no `.rs`, `.res` or `.gleam` files at all. The
+`find` returns nothing, so the gate passes over an empty set. Its subject
+should be `.ex`/`.exs`.
+
+The honest note is that repairing it would currently turn nothing red:
+first-party SPDX hygiene was measured and is clean — all 51 files under
+`elixir-mcp/lib/` and every test file carry a header. (An earlier count of
+351 violations was wrong: it swept `deps/` and `_build/`, which are vendored
+and not this project's to annotate.) So the gate is vacuous *and* the thing
+it should be checking currently passes. Fix it before that stops being true,
+not after.
+
+Note also `head -20`: even with the right extensions, the gate would only
+ever inspect the first twenty files.
+
+*`trust-container-images-pinned`* is:
+
+[source,bash]
+----
+test ! -f Containerfile || grep -q '@sha256:' Containerfile
+----
+
+There is no `Containerfile` at the repository root — it is at
+`packaging/Containerfile` — so the `test ! -f` arm short-circuits and the
+gate passes without looking at anything. Task 13 Step 13.2 pins the real
+file by digest, which makes the *content* correct while leaving the *gate*
+still blind.
+
+Neither is repaired here because `contractile.just` is generated from
+`.machine_readable/contractiles/Trustfile.a2ml`, and the A2ML sources are
+out of scope under the standing ruling. The repair belongs in that generator.
+
+=== The default-branch ruleset contains two unsatisfiable requirements
+
+Not a defect in this repository's code, but it governs whether anything in
+this plan can land, so it belongs in the record.
+
+`Optimus-Branch` (ruleset 10974255, active, `~DEFAULT_BRANCH`) requires the
+context `CodeRabbit`. CodeRabbit reviews by posting comments and emits no
+check runs at all, so that context can never be satisfied — it sits
+permanently "Expected". The same ruleset sets `require_code_owner_review:
+true`; where the PR author is the sole CODEOWNER, that is also permanently
+unsatisfiable, and `required_approving_review_count: 0` does not rescue it.
+
+The repo is nonetheless mergeable, because the ruleset grants admin a
+`pull_request`-mode bypass. That is the fact worth carrying: *a clean merge
+here demonstrates the bypass, not green gates.* Any future claim that "the
+gates passed" on this repository has to be backed by naming the checks that
+actually reported, because the merge itself proves nothing.
+
+=== Smaller things, recorded without ceremony
+
+* `docs/AI_INSTALLATION_GUIDE.adoc:158` says tokens are read from environment
+  variables only. The GitHub credential path also falls back to `gh`'s
+  `hosts.yml`. Task 17 corrects this line and says so explicitly, because it
+  is inside the verbatim privacy notice the approved plan said to leave
+  alone.
+* The audit log is written to `System.tmp_dir!()` by default
+  (`audit_log.ex:139-140`), i.e. world-readable `/tmp`, while the install
+  guide advertises `./audit.jsonl`. Task 17 corrects the documentation. The
+  *location* is not changed by this plan, and a submission ledger in `/tmp`
+  deserves its own decision.
+* `--force` is documented in the README troubleshooting table and parsed
+  nowhere in `lib/`. Tasks 16 and 17 remove the rows; no flag is added.
+* `0-AI-MANIFEST.a2ml:124` says "Verify all 26 tests still pass". The suite
+  is 272 `test` blocks across 22 files. Task 19 leaves the number alone
+  rather than replace one hand-maintained count with another.
+* `grep -ri deno` over the tree *after* Tasks 9 and 12 still prints three
+  hits, and all three are correct. `.github/label-classifier.json:426` lists
+  `deno` as a keyword that routes an issue to the `migration` label — it is
+  vocabulary, not a dependency, and deleting it would stop the classifier
+  recognising the very migrations the estate is doing.
+  `.github/workflows/dogfood-gate.yml:68`, `:69` and `:115` name `.deno/` and
+  `deno.lock` inside `find … -not -path` *exclusions*; removing them makes the
+  gate scan more, not less. `.claude/CLAUDE.md:46` is the row of the BANNED
+  table that states the Deno → Bun rule itself. The spec's "the Deno remnants
+  in this repo removed" (spec:557) names exactly two things —
+  `examples/web-project-deno.json` and the `mise.toml` entries — and Tasks 9
+  and 12 are the whole of it. A later grep-driven sweep should not read these
+  three as unfinished work.
