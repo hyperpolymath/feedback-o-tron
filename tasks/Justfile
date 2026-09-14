@@ -1,8 +1,8 @@
-# feedback-a-tron - Guix Development Tasks
+# feedback-o-tron - development tasks
 set shell := ["bash", "-uc"]
 set dotenv-load := true
 
-project := "feedback-a-tron"
+project := "feedback-o-tron"
 
 # Show all recipes
 default:

@@ -1,182 +1,133 @@
-# feedback-a-tron - Guix Development Tasks
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# feedback-o-tron — development tasks.
+# The engine is an Elixir/OTP application under elixir-mcp/.
+
 set shell := ["bash", "-uc"]
 set dotenv-load := true
 
 import? "contractile.just"
 
-project := "feedback-a-tron"
+project := "feedback-o-tron"
+engine := "elixir-mcp"
 
 # Show all recipes
 default:
     @just --list --unsorted
 
-# Build with guix
-build:
-    guix build
+# Fetch and compile dependencies
+deps:
+    cd {{engine}} && mix deps.get
 
-# Build and show output path
-build-show:
-    guix build --print-out-paths
+# Compile the engine with warnings as errors
+build: deps
+    cd {{engine}} && mix compile --warnings-as-errors
 
-# Enter dev shell
-develop:
-    guix develop
+# Run the test suite (escript tests are excluded; see `just smoke`)
+test: deps
+    cd {{engine}} && mix test
 
-# Check flake
-check:
-    guix flake check
-
-# Update flake inputs
-update:
-    guix flake update
-
-# Show flake info
-info:
-    guix flake info
-
-# Format guix files
+# Check formatting without changing anything
 fmt:
-    nixfmt *.guix || guix fmt
+    cd {{engine}} && mix format --check-formatted
 
-# Run guix linter
-lint:
-    statix check . || true
+# Rewrite sources to canonical format
+fmt-write:
+    cd {{engine}} && mix format
 
-# Clean
+# Compile clean and check formatting
+lint: build fmt
+
+# Build the standalone binary at elixir-mcp/feedback-o-tron
+escript: deps
+    cd {{engine}} && mix escript.build
+
+# Build the binary, run the end-to-end tests against it, then prove the MCP
+# door cannot file anything with nobody present
+smoke: escript
+    cd {{engine}} && mix test --only escript
+    cd {{engine}} && scripts/consent_bypass_check.sh
+
+# Run the engine in the foreground; Ctrl-D on stdin stops it
+serve: escript
+    {{engine}}/feedback-o-tron serve
+
+# Install the binary to ~/.local/bin
+install: escript
+    install -Dm755 {{engine}}/feedback-o-tron ~/.local/bin/feedback-o-tron
+    @echo "Installed ~/.local/bin/feedback-o-tron"
+
+# Remove build output and the built binary
 clean:
-    rm -rf result
+    rm -rf {{engine}}/_build {{engine}}/deps {{engine}}/feedback-o-tron
 
-# Show derivation
-show-drv:
-    guix derivation show
+# Build the Guix package defined in guix.scm
+guix-build:
+    guix build -f guix.scm
 
-# All checks before commit
-pre-commit: check
-    @echo "All checks passed!"
+# Enter a development shell with the toolchain from guix.scm
+guix-shell:
+    guix shell -f guix.scm
 
-# Run panic-attacker pre-commit scan
-assail:
-    @command -v panic-attack >/dev/null 2>&1 && panic-attack assail . || echo "panic-attack not found — install from https://github.com/hyperpolymath/panic-attacker"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ONBOARDING & DIAGNOSTICS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Check all required toolchain dependencies and report health
+# Check the toolchain and report what is missing
 doctor:
     #!/usr/bin/env bash
-    echo "═══════════════════════════════════════════════════"
-    echo "  Feedback O Tron Doctor — Toolchain Health Check"
-    echo "═══════════════════════════════════════════════════"
-    echo ""
-    PASS=0; FAIL=0; WARN=0
-    check() {
-        local name="$1" cmd="$2" min="$3"
+    echo "feedback-o-tron doctor"
+    echo
+    pass=0; fail=0; warn=0
+    ver() {
+        case "$1" in
+            elixir) elixir --short-version ;;
+            erl)    erl -noshell -eval 'io:format("~s~n",[erlang:system_info(otp_release)]), halt().' ;;
+            *)      "$1" --version 2>&1 | head -1 ;;
+        esac
+    }
+    probe() {
+        local kind="$1" cmd="$2" hint="$3"
         if command -v "$cmd" >/dev/null 2>&1; then
-            VER=$("$cmd" --version 2>&1 | head -1)
-            echo "  [OK]   $name — $VER"
-            PASS=$((PASS + 1))
+            echo "  [ok]   $cmd $(ver "$cmd")"
+            pass=$((pass + 1))
+        elif [ "$kind" = need ]; then
+            echo "  [FAIL] $cmd not found ($hint)"
+            fail=$((fail + 1))
         else
-            echo "  [FAIL] $name — not found (need $min+)"
-            FAIL=$((FAIL + 1))
+            echo "  [warn] $cmd not found ($hint)"
+            warn=$((warn + 1))
         fi
     }
-    check "just"              just      "1.25" 
-    check "git"               git       "2.40" 
-    check "Zig"               zig       "0.13" 
-# Optional tools
-if command -v panic-attack >/dev/null 2>&1; then
-    echo "  [OK]   panic-attack — available"
-    PASS=$((PASS + 1))
-else
-    echo "  [WARN] panic-attack — not found (pre-commit scanner)"
-    WARN=$((WARN + 1))
-fi
-    echo ""
-    echo "  Result: $PASS passed, $FAIL failed, $WARN warnings"
-    if [ "$FAIL" -gt 0 ]; then
-        echo "  Run 'just heal' to attempt automatic repair."
+    probe need elixir "1.16 or newer"
+    probe need erl    "OTP 26 or newer"
+    probe need git    "2.40 or newer"
+    probe need gh     "GitHub CLI, required to submit issues"
+    probe want podman "only for the container image"
+    probe want guix   "only for the Guix route"
+    echo
+    echo "  $pass ok, $fail missing, $warn optional missing"
+    if [ "$fail" -gt 0 ]; then
+        echo "  Install routes: docs/AI_INSTALLATION_GUIDE.adoc"
         exit 1
     fi
-    echo "  All required tools present."
 
-# Attempt to automatically install missing tools
-heal:
-    #!/usr/bin/env bash
-    echo "═══════════════════════════════════════════════════"
-    echo "  Feedback O Tron Heal — Automatic Tool Installation"
-    echo "═══════════════════════════════════════════════════"
-    echo ""
-if ! command -v just >/dev/null 2>&1; then
-    echo "Installing just..."
-    cargo install just 2>/dev/null || echo "Install just from https://just.systems"
-fi
-    echo ""
-    echo "Heal complete. Run 'just doctor' to verify."
+# Run the panic-attacker pre-commit scan if it is installed
+assail:
+    @command -v panic-attack >/dev/null 2>&1 && panic-attack assail . || echo "panic-attack not found — https://github.com/hyperpolymath/panic-attacker"
 
-# Guided tour of the project structure and key concepts
-tour:
-    #!/usr/bin/env bash
-    echo "═══════════════════════════════════════════════════"
-    echo "  Feedback O Tron — Guided Tour"
-    echo "═══════════════════════════════════════════════════"
-    echo ""
-    echo 'Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>'
-    echo ""
-    echo "Key directories:"
-    echo "  src/                      Source code" 
-    echo "  ffi/                      Foreign function interface (Zig)" 
-    echo "  src/abi/                  Idris2 ABI definitions" 
-    echo "  docs/                     Documentation" 
-    echo "  tests/                    Test suite" 
-    echo "  .github/workflows/        CI/CD workflows" 
-    echo "  contractiles/             Must/Trust/Dust contracts" 
-    echo "  .machine_readable/        Machine-readable metadata" 
-    echo "  examples/                 Usage examples" 
-    echo ""
-    echo "Quick commands:"
-    echo "  just doctor    Check toolchain health"
-    echo "  just heal      Fix missing tools"
-    echo "  just help-me   Common workflows"
-    echo "  just default   List all recipes"
-    echo ""
-    echo "Read more: README.adoc, EXPLAINME.adoc"
-
-# Show help for common workflows
-help-me:
-    #!/usr/bin/env bash
-    echo "═══════════════════════════════════════════════════"
-    echo "  Feedback O Tron — Common Workflows"
-    echo "═══════════════════════════════════════════════════"
-    echo ""
-echo "FIRST TIME SETUP:"
-echo "  just doctor           Check toolchain"
-echo "  just heal             Fix missing tools"
-echo "" 
-echo "PRE-COMMIT:"
-echo "  just assail           Run panic-attacker scan"
-echo ""
-echo "LEARN:"
-echo "  just tour             Guided project tour"
-echo "  just default          List all recipes" 
-
-
-# Print the current CRG grade (reads from READINESS.md '**Current Grade:** X' line)
+# Print the current CRG grade (reads '**Current Grade:** X' from READINESS.md)
 crg-grade:
-    @grade=$$(grep -oP '(?<=\*\*Current Grade:\*\* )[A-FX]' READINESS.md 2>/dev/null | head -1); \
-    [ -z "$$grade" ] && grade="X"; \
-    echo "$$grade"
+    @grade=$(grep -oP '(?<=\*\*Current Grade:\*\* )[A-FX]' READINESS.md 2>/dev/null | head -1); \
+    [ -z "$grade" ] && grade="X"; \
+    echo "$grade"
 
-# Generate a shields.io badge markdown for the current CRG grade
-# Looks for '**Current Grade:** X' in READINESS.md; falls back to X
+# Generate a shields.io badge for the current CRG grade
 crg-badge:
-    @grade=$$(grep -oP '(?<=\*\*Current Grade:\*\* )[A-FX]' READINESS.md 2>/dev/null | head -1); \
-    [ -z "$$grade" ] && grade="X"; \
-    case "$$grade" in \
+    @grade=$(grep -oP '(?<=\*\*Current Grade:\*\* )[A-FX]' READINESS.md 2>/dev/null | head -1); \
+    [ -z "$grade" ] && grade="X"; \
+    case "$grade" in \
       A) color="brightgreen" ;; B) color="green" ;; C) color="yellow" ;; \
       D) color="orange" ;; E) color="red" ;; F) color="critical" ;; \
       *) color="lightgrey" ;; esac; \
-    echo "[![CRG $$grade](https://img.shields.io/badge/CRG-$$grade-$$color?style=flat-square)](https://github.com/hyperpolymath/standards/tree/main/component-readiness-grades)"
+    echo "[![CRG $grade](https://img.shields.io/badge/CRG-$grade-$color?style=flat-square)](https://github.com/hyperpolymath/standards/tree/main/component-readiness-grades)"
 
 secret-scan-trufflehog:
     @command -v trufflehog >/dev/null && trufflehog filesystem . --only-verified || true
