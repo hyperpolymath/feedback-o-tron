@@ -119,10 +119,10 @@ Once your AI finishes, you can:
 [source,bash]
 ----
 # File a bug (or just tell your AI to do it)
-./feedback-a-tron submit --repo "owner/repo" --title "Bug" --body "Details" --platform github
+./feedback-o-tron submit --repo "owner/repo" --title "Bug" --body "Details" --platform github
 
 # Dry-run (safe test)
-./feedback-a-tron submit --repo "test" --title "Test" --body "Test" --dry-run
+./feedback-o-tron submit --repo "test" --title "Test" --body "Test" --dry-run
 
 # Or with Claude Code MCP integration, just say:
 # "File a bug about the crash in maliit-keyboard on Fedora Bugzilla"
@@ -139,13 +139,13 @@ Tell your AI: "Remove feedback-o-tron from my system"
 |Problem |Solution
 
 |"elixir: command not found"
-|AI will install Elixir for you. Or: `asdf install elixir latest`
+|Install Elixir from your distribution first: `dnf install elixir`, `apt install elixir`, `brew install elixir`. See link:docs/AI_INSTALLATION_GUIDE.adoc[the installation guide] for every route.
 
 |"401 Unauthorized"
-|Token expired or wrong scopes. Tell your AI and it will guide you through regeneration.
+|The token is expired or lacks scopes. For GitHub, `gh auth login` and let the CLI hold the token.
 
 |"duplicate detected"
-|Deduplicator working correctly. Use `--force` to submit anyway.
+|The deduplicator found an existing report. Read it first; if it is genuinely different, change the title so it is.
 |===
 
 [[manual-installation]]
@@ -189,26 +189,24 @@ I need you to set up feedback-o-tron, an autonomous bug reporting tool. Here's w
 2. Navigate to the elixir-mcp directory
 3. Run `mix deps.get` to install dependencies
 4. Build the escript with `mix escript.build`
-5. Test with dry-run: `./feedback-a-tron submit --repo "test/repo" --title "Test" --body "Test body" --platform github --dry-run`
+5. Test with dry-run: `./feedback-o-tron submit --repo "test/repo" --title "Test" --body "Test body" --platform github --dry-run`
 6. Set up credentials:
    - For GitHub: export GITHUB_TOKEN=ghp_your_token
    - For Bugzilla: export BUGZILLA_API_KEY=your_api_key
-7. Configure as MCP server in ~/.config/claude/mcp_servers.json:
-   {
-     "feedback-o-tron": {
-       "command": "/full/path/to/feedback-a-tron",
-       "args": ["--mcp-server"],
-       "env": {
-         "GITHUB_TOKEN": "${GITHUB_TOKEN}",
-         "BUGZILLA_API_KEY": "${BUGZILLA_API_KEY}"
-       }
-     }
-   }
+7. Register it as an MCP server:
+   claude mcp add feedback-o-tron \
+     -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+     -- /full/path/to/feedback-o-tron serve
 
-After setup, you can submit bugs with commands like:
-./feedback-a-tron submit --repo "Fedora" --title "App crashes on launch" --body "Details..." --platform bugzilla --component "kde" --version "43"
+After setup, drafting a report is yours to run and mine to confirm:
 
-Check .machine_readable/6a2/STATE.a2ml in .machine_readable/ for project status and integrate with your workflow.
+  ./feedback-o-tron submit --repo "owner/repo" --title "..." --body "..." --platform github
+
+The command prints the entire payload and waits for a typed "y". You type
+it, not me — with no terminal the command refuses and exits 3. Add
+--dry-run to see the payload and send nothing.
+
+Project status is in .machine_readable/6a2/STATE.a2ml.
 ----
 
 The AI agent will read this prompt and execute all setup steps automatically.
@@ -218,26 +216,25 @@ The AI agent will read this prompt and execute all setup steps automatically.
 
 [source,bash]
 ----
-# Clone
-git clone {url-github}
+# Clone and build
+git clone https://github.com/hyperpolymath/feedback-o-tron
 cd feedback-o-tron/elixir-mcp
-
-# Install dependencies
 mix deps.get
-
-# Build standalone CLI
 mix escript.build
 
-# Test (dry-run mode)
-./feedback-a-tron submit \
+# Check it built
+./feedback-o-tron --version          # feedback-o-tron v1.0.0
+
+# Preview a report without sending anything
+./feedback-o-tron submit \
   --repo "owner/repo" \
   --title "Bug title" \
   --body "Description" \
   --platform github \
   --dry-run
 
-# Run MCP server mode
-mix run --no-halt
+# Run the engine: MCP on stdin/stdout, HTTP intake on 127.0.0.1:7722
+./feedback-o-tron serve
 ----
 
 == Validation Status (2026-02-07)
@@ -267,7 +264,7 @@ Validated on 2026-02-07:
 **MCP Integration:**
 
 * MCP server supports stdio (default) for Claude Code integration
-* TCP mode available (line-delimited JSON-RPC on port 844)
+* TCP mode available (line-delimited JSON-RPC), off by default; enable with `FEEDBACK_A_TRON_MCP_TCP=1`, port 7979 (`FEEDBACK_A_TRON_MCP_TCP_PORT`), loopback only
 * Systemd service files included for daemon mode
 
 
@@ -279,7 +276,7 @@ Validated on 2026-02-07:
 [source,bash]
 ----
 # Submit to GitHub
-./feedback-a-tron submit \
+./feedback-o-tron submit \
   --repo "owner/repo" \
   --title "Bug: Something is broken" \
   --body "Full description..." \
@@ -287,7 +284,7 @@ Validated on 2026-02-07:
   --label "bug"
 
 # Submit to Bugzilla (real-world tested)
-./feedback-a-tron submit \
+./feedback-o-tron submit \
   --repo "Fedora" \
   --title "maliit-keyboard crash loop on startup" \
   --body "Package: maliit-keyboard\nCrashes with SIGABRT..." \
@@ -296,7 +293,7 @@ Validated on 2026-02-07:
   --version "43"
 
 # Multi-platform submission
-./feedback-a-tron submit \
+./feedback-o-tron submit \
   --repo "owner/repo" \
   --title "Feature request" \
   --body "..." \
@@ -305,17 +302,17 @@ Validated on 2026-02-07:
   --platform codeberg
 
 # Dry-run (test without submitting)
-./feedback-a-tron submit \
+./feedback-o-tron submit \
   --repo "test/repo" \
   --title "Test" \
   --body "Test" \
   --dry-run
 
 # Show version
-./feedback-a-tron --version
+./feedback-o-tron --version
 
 # Show help
-./feedback-a-tron --help
+./feedback-o-tron --help
 ----
 
 === As Elixir Library
@@ -404,21 +401,60 @@ The MCP server exposes **three** feedback tools, designed as an interactive loop
 }
 ----
 
-MCP configuration in `~/.config/claude/mcp_servers.json`:
+Register the server with Claude Code:
+
+[source,bash]
+----
+claude mcp add feedback-o-tron \
+  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+  -- /full/path/to/feedback-o-tron serve
+----
+
+For a host that takes a JSON config file instead (a project `.mcp.json`, or
+the host's own settings file):
 
 [source,json]
 ----
 {
-  "feedback-o-tron": {
-    "command": "/path/to/feedback-a-tron",
-    "args": ["--mcp-server"],
-    "env": {
-      "GITHUB_TOKEN": "${GITHUB_TOKEN}",
-      "BUGZILLA_API_KEY": "${BUGZILLA_API_KEY}"
+  "mcpServers": {
+    "feedback-o-tron": {
+      "command": "/full/path/to/feedback-o-tron",
+      "args": ["serve"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
     }
   }
 }
 ----
+
+== Running the engine
+
+One command runs everything in one OS process:
+
+[source,bash]
+----
+./feedback-o-tron serve
+----
+
+That opens two doors:
+
+* *MCP* on stdin/stdout, for Claude Code and any other MCP host. With this
+  door open the process exits when stdin closes, so a host that goes away
+  does not leave an orphan behind.
+* *HTTP intake* on `127.0.0.1:7722`, for `boj` and local tools.
+  `GET /health` answers
+  `{"status":"ok","service":"feedback-o-tron","intake":"http"}`.
+
+Close either one: `--no-stdio`, `--no-http`. Closing both is an error —
+there would be nothing to serve. `--http-port N` moves the intake;
+`FEEDBACK_O_TRON_HTTP_PORT` and `FEEDBACK_O_TRON_HTTP_BIND` do the same from
+the environment.
+
+Nothing is sent from the CLI without a person's yes. `submit` prints the
+whole payload — every field, exactly as it will be sent — and waits. If
+stdin is not a terminal it refuses and exits 3. There is no `--yes`; use
+`--dry-run` to preview.
 
 == Formal Specification with Idris2
 
@@ -504,20 +540,13 @@ See link:TOPOLOGY.md[TOPOLOGY.md] for a visual architecture map and completion d
 
 === Claude Code (Anthropic)
 
-1. Add to `~/.config/claude/mcp_servers.json`:
+1. Register the server:
 +
-[source,json]
+[source,bash]
 ----
-{
-  "feedback-o-tron": {
-    "command": "/full/path/to/feedback-a-tron",
-    "args": ["--mcp-server"],
-    "env": {
-      "GITHUB_TOKEN": "${GITHUB_TOKEN}",
-      "BUGZILLA_API_KEY": "${BUGZILLA_API_KEY}"
-    }
-  }
-}
+claude mcp add feedback-o-tron \
+  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+  -- /full/path/to/feedback-o-tron serve
 ----
 
 2. Restart Claude Code
@@ -530,7 +559,7 @@ Use as CLI tool with GPT Code Interpreter or via API:
 [source,bash]
 ----
 # GPT can execute shell commands
-./feedback-a-tron submit --repo "owner/repo" --title "..." --body "..." --platform github
+./feedback-o-tron submit --repo "owner/repo" --title "..." --body "..." --platform github
 ----
 
 Or integrate via API wrapper.
@@ -542,7 +571,7 @@ Use as CLI tool:
 [source,bash]
 ----
 # Gemini can execute commands in code execution environment
-./feedback-a-tron submit --repo "..." --title "..." --body "..." --platform bugzilla --component "..." --version "..."
+./feedback-o-tron submit --repo "..." --title "..." --body "..." --platform bugzilla --component "..." --version "..."
 ----
 
 === Local SLMs (Ollama, LM Studio, etc.)
@@ -689,7 +718,7 @@ export FEEDBACK_EMAIL_TO=bugs@example.com
 [source,bash]
 ----
 # Component and version are REQUIRED for Bugzilla
-./feedback-a-tron submit \
+./feedback-o-tron submit \
   --repo "Fedora" \
   --title "..." \
   --body "..." \
@@ -729,7 +758,7 @@ mix test
 
 [source,bash]
 ----
-./feedback-a-tron submit \
+./feedback-o-tron submit \
   --repo "test/repo" \
   --title "Test bug" \
   --body "Test description" \
