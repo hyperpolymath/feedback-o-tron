@@ -1,19 +1,19 @@
 {
   "groove_version": "1",
   "service_id": "feedback-o-tron",
-  "service_version": "0.2.0",
+  "service_version": "1.0.0",
   "mode": "passive",
   "capabilities": {
     "bug-reporting": {
       "type": "bug-reporting",
-      "description": "Autonomous multi-platform bug reporting for AI agents — submits structured findings to GitHub, GitLab, or local files",
+      "description": "Multi-platform feedback and bug-report submission for people and AI agents — GitHub, GitLab, Bitbucket, Codeberg, Bugzilla and email",
       "protocol": "cli",
       "requires_auth": true,
       "panel_compatible": true
     },
     "dogfood-feedback": {
       "type": "dogfood-feedback",
-      "description": "Receives DOG-XX check failures from dogfood-gate and creates actionable issues",
+      "description": "Receives DOG-XX check failures from dogfood-gate and drafts actionable issues",
       "protocol": "cli",
       "requires_auth": true,
       "panel_compatible": true
@@ -25,11 +25,11 @@
     "bot-orchestration"
   ],
   "invoke_patterns": {
-    "ci": "feedback-o-tron submit --ci --format json --source dogfood-gate",
-    "local": "feedback-o-tron submit --interactive",
-    "mcp": "boj cartridge_invoke feedback-o-tron"
+    "ci": "feedback-o-tron submit --repo OWNER/REPO --title TITLE --body BODY --dry-run",
+    "local": "feedback-o-tron submit --repo OWNER/REPO --title TITLE --body BODY",
+    "mcp": "feedback-o-tron serve"
   },
-  "health": null,
+  "health": "/health",
   "applicability": [
     "individual",
     "team",
