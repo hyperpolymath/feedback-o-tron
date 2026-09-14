@@ -31,11 +31,11 @@ work="$(mktemp -d)"
 ghlog="$work/gh-calls.log"
 : >"$ghlog"
 
-# The tracked escript is a build artefact that `mix escript.build` overwrites.
-# Restore it however we exit, so a verification run never dirties the tree.
+# The built escript is a git-ignored, untracked artefact of this run.
+# Remove it however we exit, so a verification run never dirties the tree.
 cleanup() {
   rm -rf "$work"
-  git checkout -- feedback-a-tron 2>/dev/null || true
+  rm -f feedback-o-tron
 }
 trap cleanup EXIT
 
@@ -67,7 +67,7 @@ JSON
 
 echo "==> driving the MCP door with no person present"
 out="$work/response.jsonl"
-./feedback-a-tron serve --no-http <"$req" >"$out" 2>"$work/stderr.log" || true
+./feedback-o-tron serve --no-http <"$req" >"$out" 2>"$work/stderr.log" || true
 
 calls="$(wc -l <"$ghlog" | tr -d ' ')"
 echo "==> gh invocations: $calls (must be 0)"

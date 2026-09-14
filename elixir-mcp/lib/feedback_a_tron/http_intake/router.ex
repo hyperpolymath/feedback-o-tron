@@ -43,7 +43,7 @@ defmodule FeedbackATron.HTTPIntake.Router do
   plug(:dispatch)
 
   get "/health" do
-    send_json(conn, 200, %{status: "ok", service: "feedback-a-tron", intake: "http"})
+    send_json(conn, 200, %{status: "ok", service: "feedback-o-tron", intake: "http"})
   end
 
   post "/api/v1/submit_feedback" do
