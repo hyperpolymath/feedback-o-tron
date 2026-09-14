@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MPL-2.0
 # STATE.a2ml — Project state checkpoint
 # Converted from STATE.scm on 2026-03-15
-# Updated 2026-07-09
+# Updated 2026-09-14
 
 [metadata]
 project = "feedback-o-tron"
 version = "1.0.0"
-last-updated = "2026-07-09"
+last-updated = "2026-09-14"
 status = "active-development"
 
 [project-context]
