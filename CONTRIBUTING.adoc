@@ -14,7 +14,7 @@ Install dependencies manually
 
 == Verify setup
 
-just check # or: cargo check / mix compile / etc. just test # Run test
+just lint # compile clean and check formatting just test # Run test
 suite
 
 ....
