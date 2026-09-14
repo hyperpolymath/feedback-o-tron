@@ -17,7 +17,7 @@ runtime = "podman"
 
 [layers.base]
 description = "Chainguard Wolfi minimal base"
-from = "cgr.dev/chainguard/wolfi-base:latest"
+from = "cgr.dev/chainguard/wolfi-base@sha256:9a8d954d8f03a21bcf2be73d4628f0ad26d35c3275469925de63a34eebd58f13"
 cache = true
 verify = true
 
@@ -38,7 +38,7 @@ commands = [
 
 [layers.runtime]
 description = "Release plus its shared libraries; ERTS is bundled"
-from = "cgr.dev/chainguard/wolfi-base:latest"
+from = "cgr.dev/chainguard/wolfi-base@sha256:9a8d954d8f03a21bcf2be73d4628f0ad26d35c3275469925de63a34eebd58f13"
 packages = ["ca-certificates", "ncurses", "openssl", "libstdc++"]
 copy-from = [
     { layer = "build", src = "/build/elixir-mcp/_build/prod/rel/feedback_a_tron/", dst = "/home/feedback/release/" },
@@ -56,3 +56,14 @@ seccomp-profile = "default"
 [security.signing]
 algorithm = "ML-DSA-87"
 provider = "cerro-torre"
+
+[security.sbom]
+format = "spdx-json"
+output = "sbom.spdx.json"
+include-deps = true
+
+[verify]
+vordr = true
+svalinn = true
+scan-on-build = true
+fail-on = ["critical", "high"]
