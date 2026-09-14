@@ -113,7 +113,7 @@ I can help you set up feedback-o-tron for automated bug reporting.
 
 [source,bash]
 ----
-elixir --version    # need 1.16 or newer
+elixir --version    # need 1.15 or newer
 erl -version        # need OTP 26 or newer
 git --version
 gh --version        # GitHub CLI - required for the GitHub platform
@@ -139,7 +139,7 @@ sudo apt install elixir erlang gh
 brew install elixir gh
 ----
 
-If the distribution's Elixir is older than 1.16, use mise, which the
+If the distribution's Elixir is older than 1.15, use mise, which the
 repository already configures:
 
 [source,bash]
@@ -424,7 +424,7 @@ AI: I can help set up feedback-o-tron for automated bug reporting.
 
 User: GitHub and Fedora Bugzilla. I have Elixir via asdf. Just CLI for now.
 
-AI: Which version? Run `elixir --version` — anything below 1.16 will not
+AI: Which version? Run `elixir --version` — anything below 1.15 will not
 compile this project.
 
 User: 1.19.5

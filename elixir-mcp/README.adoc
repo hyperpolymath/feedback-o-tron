@@ -17,7 +17,7 @@ mix escript.build          # produces ./feedback-o-tron
 ./feedback-o-tron --version
 ----
 
-Requires Elixir 1.16 or newer on OTP 26 or newer. CI tests 1.15, 1.16 and
+Requires Elixir 1.15 or newer on OTP 26 or newer. CI tests 1.15, 1.16 and
 1.17 on OTP 26, plus 1.19 on OTP 27, which is what this engine is developed
 against.
 

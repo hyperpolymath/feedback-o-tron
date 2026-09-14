@@ -96,7 +96,7 @@ doctor:
             warn=$((warn + 1))
         fi
     }
-    probe need elixir "1.16 or newer"
+    probe need elixir "1.15 or newer"
     probe need erl    "OTP 26 or newer"
     probe need git    "2.40 or newer"
     probe need gh     "GitHub CLI, required to submit issues"
