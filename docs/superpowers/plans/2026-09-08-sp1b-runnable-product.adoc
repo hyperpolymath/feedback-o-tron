@@ -4689,6 +4689,15 @@ An assistant may read the transcript afterwards and act on what it says.
 *Files:* none. This task changes nothing; it is the test of everything
 Tasks 1-18 changed.
 
+The steps below are also on the branch as `docs/STRANGER_REHEARSAL.adoc`, in
+paste-ready form with the watch-list and the verdict template. That file is
+the one to work from at the keyboard: it declares the two substitutions a
+pre-merge container run forces (clone the branch, drop the absent `sudo`) so
+that neither is decided mid-run, and it wraps the session in `script` so the
+transcript survives `--rm`. It is deliberately AsciiDoc rather than a shell
+script -- a file with nothing to invoke cannot be invoked by an assistant, a
+`just` recipe or CI.
+
 *Interfaces:*
 
 * Consumes: the root `README.adoc` as Task 16 leaves it — and nothing else.

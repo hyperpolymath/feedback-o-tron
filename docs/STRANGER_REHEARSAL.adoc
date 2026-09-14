@@ -1,0 +1,271 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath)
+= feedback-o-tron: The Stranger Rehearsal
+:toc:
+:toc-placement: preamble
+:revdate: 2026-09-14
+
+The acceptance test for SP1b. Install feedback-o-tron the way a stranger
+would -- on a machine that has never seen it, from the README and nothing
+else -- and file one real issue.
+
+[WARNING]
+====
+*This document is not a script, and no assistant may execute any part of it.*
+
+It is a sheet of blocks to paste, one at a time, by a person at a keyboard.
+Two of its steps cannot be automated at all: `gh auth login` is an interactive
+device flow, and the send is gated on a `y` that only a person may type.
+
+There is deliberately no `.sh` file here. Nothing to invoke means nothing
+invoked by accident -- not by an assistant, not by a `just` recipe, not by CI.
+====
+
+== What this measures
+
+The bar is not "every command exited 0". It is that a person who has never
+seen this repository, following the README alone, reaches a filed issue --
+and that nothing leaves the machine unread.
+
+Two kinds of failure count, and they are recorded differently.
+
+*A README defect* is a command that cannot be run because the README did not
+say what was needed. Write it down and carry on; do not repair the README
+during the run, and do not repair it silently in your head. A gap bridged from
+prior knowledge is a gap that ships. The point of using a bare container is
+that it has no prior knowledge to bridge it with.
+
+*A payload defect* is anything in the printed payload that the privacy rule
+forbids -- see <<watch-list>>. It is a FAIL even when every command succeeded,
+and it is caught *before* the `y`, never after. After the `y` it is not a test
+result; it is a disclosure.
+
+== Before starting
+
+Run this after the pull request is open. Step 8 records the verdict as a
+comment on that PR, so the PR has to exist first. Run it before the merge.
+
+=== Two substitutions, declared here so neither is decided mid-run
+
+Follow the README literally everywhere except these two points. Both are
+artefacts of rehearsing *before the merge* and *inside a container*, not
+defects, and both are named in advance so that no judgement call is made with
+a half-built container in front of you.
+
+. *Read and clone the branch, not `main`.* Until the PR merges, `main` carries
+  the old README and the old code, so a rehearsal against it measures the
+  wrong tree. Read the README at
+  `https://github.com/hyperpolymath/feedback-o-tron/blob/feat/sp1b-runnable-product/README.adoc`,
+  and at the clone step use `git clone -b feat/sp1b-runnable-product …`. This
+  is the only place the branch name appears; after the merge a stranger needs
+  neither substitution.
+. *`sudo` is absent, and unnecessary.* Fedora base images ship no `sudo` and
+  the shell is already root. Where the README says `sudo dnf install …`, drop
+  the `sudo`. Record that it was dropped. This is a property of the container,
+  not a finding about the README -- a real stranger on a real machine is not
+  root and needs the `sudo` exactly as written.
+
+Anything else that has to be changed to make a command work *is* a finding.
+Write it in the log rather than absorbing it.
+
+=== Capture the transcript
+
+`--rm` destroys the container when the shell exits, and step 8 wants the
+verbatim transcript. Wrap the whole session on the host:
+
+[source,bash]
+----
+script -q ~/fot-rehearsal-$(date +%F).log \
+  podman run -it --rm --name fot-stranger fedora:42 /bin/bash
+----
+
+Everything from step 2 onward happens inside that container shell.
+
+== The run
+
+=== Step 1: the container
+
+Covered by the `script` wrapper above. The container starts with no `git`, no
+`elixir`, no `erlang` and no `gh`. That is the point: the README has to say so
+before it says `git clone`.
+
+=== Step 2: follow the README
+
+Open the branch README, go to *Manual Quick Start*, and do exactly what it
+says in the order it says it, with the two declared substitutions and nothing
+else. Expected shape: a prerequisites block, then install, then clone, then
+`mix deps.get`, `mix escript.build`, then `./feedback-o-tron --version`
+printing `feedback-o-tron v1.0.0`.
+
+Stop and write it down the moment a command needs something the README never
+mentioned.
+
+=== Step 3: credentials
+
+[source,bash]
+----
+gh auth login
+gh auth status
+----
+
+[IMPORTANT]
+====
+*This step exercises the file path, not the keyring path, and cannot
+substitute for step 7.*
+
+In a container `gh` has no keyring, so it writes the token into
+`~/.config/gh/hosts.yml` and everything works. On the owner's desktop it uses
+the system keyring instead, and on 2026-09-08 that combination was measured
+failing: `gh auth status` reported the account as `(keyring)`,
+`grep -c 'oauth_token' ~/.config/gh/hosts.yml` returned `0` with rc 1, and the
+`users:` block was empty. A container run is therefore *incapable of
+reproducing the desktop failure*. Step 7 exists for that and must not be
+skipped because this step was green.
+====
+
+=== Step 4: preview, sending nothing
+
+[source,bash]
+----
+./feedback-o-tron submit \
+  --repo "hyperpolymath/feedback-o-tron" \
+  --title "[stranger test] rehearsal from a bare fedora:42 container" \
+  --body "Filed during the SP1b stranger rehearsal. Closing immediately." \
+  --platform github \
+  --dry-run
+----
+
+Expected: the entire payload, then the line
+
+[source]
+----
+  [DRY RUN] github: Would submit
+----
+
+and nothing sent.
+
+*Read the payload against <<watch-list>> now.* This is the step that exists to
+catch a privacy defect while catching it is still free.
+
+=== Step 5: the send. This step is the owner's, at a keyboard
+
+The same command without `--dry-run`. The CLI prints the whole payload again
+and waits:
+
+[source]
+----
+Send this report? [y/N]
+----
+
+Read it, then type `y`. Anything else sends nothing. With no terminal the
+command refuses and exits 3 rather than assuming consent.
+
+There is no flag that skips this prompt, and none may be added. An assistant
+must never type this `y` on a person's behalf.
+
+=== Step 6: close it, and record the number
+
+[source,bash]
+----
+gh issue list --repo hyperpolymath/feedback-o-tron --limit 5
+gh issue close <N> --repo hyperpolymath/feedback-o-tron \
+  --comment "Stranger-test rehearsal for SP1b. Closing immediately."
+----
+
+*Assert on the title prefix only.* The issue must be titled
+`[stranger test] …`. Do not assert on labels: `POST /issues` silently drops a
+`labels` array from a sender without push access, so a genuine stranger's
+report arrives unlabelled. A label assertion would pass for the owner and fail
+for exactly the person this test is named after. Apply the `stranger-test`
+label by hand afterwards if it is wanted for filtering.
+
+=== Step 7: repeat the credential step on the host
+
+Outside the container, in the desktop session with the keyring:
+
+[source,bash]
+----
+gh auth status
+grep -c 'oauth_token' ~/.config/gh/hosts.yml   # rc 1 and 0 is the failure shape
+./feedback-o-tron submit \
+  --repo "hyperpolymath/feedback-o-tron" \
+  --title "[stranger test] host keyring path" \
+  --body "Credential-path check only." \
+  --platform github \
+  --dry-run
+----
+
+`--dry-run` throughout: this step is about whether the token is *found*, and
+nothing needs to be sent to learn that. A second real issue is not wanted.
+
+=== Step 8: the verdict
+
+Post it as a comment on the PR, not as a commit -- a rehearsal is evidence
+about a branch, not a change to it. Template at <<verdict>>.
+
+[[watch-list]]
+== The watch-list: what makes a payload a FAIL
+
+Read the printed payload against this list at step 4, before any `y` is
+typed. These are things to look for on screen, not greps to run -- the point
+is that a person read it.
+
+The rule they enforce, in the owner's words: nothing may ever be sent that
+might carry a detailed build number, a MAC address or an IP address, *even
+when that would be useful feedback*.
+
+[cols="1,3"]
+|===
+|Look for |Why it fails
+
+|A hostname
+|Machine identity. Container names and desktop hostnames both count.
+
+|Any path under `/root` or `/home`
+|Leaks a username, and often a directory layout with it.
+
+|Anything shaped like `ghp_…` or `gho_…`
+|A GitHub credential. A token in a payload is an incident, not a defect.
+
+|An IPv4 or IPv6 literal
+|Network identity, whether or not it is routable.
+
+|An OS build string more specific than the distribution name
+|"Fedora 42" is fine. A kernel build, a minor point release or an image
+digest is a fingerprint.
+|===
+
+Anything on this list means: do not type `y`, record the payload region that
+carried it, and treat the run as FAIL. The defect is in the sender, not in the
+rehearsal.
+
+[[verdict]]
+== Verdict template
+
+Paste into a PR comment, filled in:
+
+[source]
+----
+Stranger rehearsal — <date>, fedora:42 container, branch feat/sp1b-runnable-product
+
+Result: PASS | FAIL
+Issue filed: #<N> (closed)
+Title prefix asserted: [stranger test] — yes/no
+
+Declared substitutions used:
+  - cloned the branch rather than main: yes
+  - dropped sudo (container runs as root): yes/no
+
+README defects found (each = a command that could not be run as written):
+  1. …
+
+Payload watch-list: clean | FAIL at <which item>
+
+Step 7 (host keyring path): token found | not found — <what gh auth status said>
+
+Transcript: attached / at ~/fot-rehearsal-<date>.log
+----
+
+A run with README defects and a filed issue is still a useful run: it says the
+product works and the instructions do not. Record both.
