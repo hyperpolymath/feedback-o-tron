@@ -403,7 +403,7 @@ Common issues:
 |The deduplicator found an existing report. Read it first; if it is genuinely different, change the title so it is.
 
 |"stdin is not a terminal" (exit 3)
-|Correct behaviour, not a fault. The confirm prompt needs a person. Run the command yourself, or add `--dry-run` to preview it.
+|Correct behaviour, not a fault. The confirm prompt needs a person at a terminal; an assistant cannot supply the `y`. The person at the keyboard runs the command. Adding `--dry-run` prints the same payload and sends nothing.
 
 |"gh: command not found"
 |Install the GitHub CLI from your distribution, or export `GITHUB_TOKEN` directly.
