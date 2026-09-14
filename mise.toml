@@ -2,7 +2,11 @@
 # Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 #
 # feedback-o-tron builds with Elixir on the BEAM. Nothing else is required.
-# The versions here are the ones CI tests against (.github/workflows/elixir-ci.yml).
+# These versions are pinned to an exact patch so local rehearsals are
+# reproducible. CI (.github/workflows/elixir-ci.yml) tests the same Elixir
+# 1.19 / OTP 27 series as one cell of a matrix that also covers 1.15, 1.16 and
+# 1.17 on OTP 26. That cell floats within the patch series on purpose: a patch
+# release that breaks the build is caught there rather than here.
 
 [tools]
 erlang = "27.0"
