@@ -67,3 +67,18 @@ vordr = true
 svalinn = true
 scan-on-build = true
 fail-on = ["critical", "high"]
+
+[targets.development]
+description = "Full development environment"
+layers = ["base", "toolchain", "build"]
+env = { LOG_LEVEL = "debug" }
+
+[targets.production]
+description = "Production deployment"
+layers = ["runtime"]
+env = { LOG_LEVEL = "info" }
+
+[targets.test]
+description = "Test environment"
+layers = ["base", "toolchain", "build"]
+env = { LOG_LEVEL = "debug" }
