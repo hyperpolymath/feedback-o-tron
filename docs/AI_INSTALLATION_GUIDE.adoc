@@ -124,19 +124,20 @@ gh --version        # GitHub CLI - required for the GitHub platform
 export a personal access token by hand. It is also not available through
 mise, so it must come from the system package manager.
 
-Install Elixir and gh from the distribution first -- that is what the project
-tests against and what receives security updates:
+Install Git, Elixir and gh from the distribution first -- that is what the
+project tests against and what receives security updates. A bare container or a
+freshly imaged machine has none of the four:
 
 [source,bash]
 ----
 # Fedora/RHEL
-sudo dnf install elixir erlang gh
+sudo dnf install git elixir erlang gh
 
 # Debian/Ubuntu
-sudo apt install elixir erlang gh
+sudo apt install git elixir erlang gh
 
 # macOS
-brew install elixir gh
+brew install git elixir gh
 ----
 
 If the distribution's Elixir is older than 1.15, use mise, which the
