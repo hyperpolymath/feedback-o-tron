@@ -3677,8 +3677,8 @@ After setup, drafting a report is yours to run and mine to confirm:
 
   ./feedback-o-tron submit --repo "owner/repo" --title "..." --body "..." --platform github
 
-The command prints the entire payload and waits for a typed "y". You type
-it, not me — with no terminal the command refuses and exits 3. Add
+The command prints the entire payload and waits for a typed "y". I type
+it, not you — with no terminal the command refuses and exits 3. Add
 --dry-run to see the payload and send nothing.
 
 Project status is in .machine_readable/6a2/STATE.a2ml.
