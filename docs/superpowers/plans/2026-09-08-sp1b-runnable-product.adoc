@@ -4840,14 +4840,21 @@ On the owner's desktop, with the keyring session that Step 20.3 quotes:
 [source,bash]
 ----
 cd elixir-mcp
+gh auth token | wc -c
 ./feedback-o-tron submit --repo "hyperpolymath/feedback-o-tron" \
   --title "[stranger test] keyring path" --body "checking credential lookup" \
   --platform github --dry-run
 ----
 
-Expected: the payload prints and the dry run completes. If it fails with a
-missing-credential error, Task 8 did not land correctly — that is the exact
-case it exists for, and the container could not have told you.
+Expected: `gh auth token` prints a non-empty token, and the payload prints and
+the dry run completes.
+
+The token count is the cell that carries the result. A dry run cannot fail
+with a missing-credential error: Submitter returns the dry-run preview before
+`Credentials.get/2` is reached, so `[DRY RUN] github: Would submit` appears
+whether or not a token was found. Task 8's fallback is literally
+`gh auth token`, so a count of 0 there is the failure this step exists to
+catch, and the container could not have shown it.
 
 * [ ] *Step 20.8: Write the verdict into the PR.*
 

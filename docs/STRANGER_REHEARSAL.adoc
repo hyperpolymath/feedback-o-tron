@@ -182,12 +182,15 @@ label by hand afterwards if it is wanted for filtering.
 
 === Step 7: repeat the credential step on the host
 
-Outside the container, in the desktop session with the keyring:
+Outside the container, in the desktop session with the keyring. Run from a
+checkout of the branch, in `elixir-mcp`, after `mix escript.build` -- that is
+where `./feedback-o-tron` comes from.
 
 [source,bash]
 ----
 gh auth status
 grep -c 'oauth_token' ~/.config/gh/hosts.yml   # rc 1 and 0 is the failure shape
+gh auth token | wc -c                          # non-zero is the answer that matters
 ./feedback-o-tron submit \
   --repo "hyperpolymath/feedback-o-tron" \
   --title "[stranger test] host keyring path" \
@@ -196,8 +199,29 @@ grep -c 'oauth_token' ~/.config/gh/hosts.yml   # rc 1 and 0 is the failure shape
   --dry-run
 ----
 
-`--dry-run` throughout: this step is about whether the token is *found*, and
-nothing needs to be sent to learn that. A second real issue is not wanted.
+[IMPORTANT]
+====
+*The dry run is not the credential probe.* `Submitter` returns the dry-run
+preview before `Credentials.get/2` is ever reached, and the comment there says
+a dry run "must not require credentials". `[DRY RUN] github: Would submit`
+therefore prints identically whether the token was found, whether the keyring
+was empty, or whether `gh` was never installed. What the dry run does prove is
+narrower and still worth having: the escript runs on the host, and
+`Credentials.load/0` completes without raising.
+
+*The third command is the probe.* `Credentials.gh_auth_token/1` shells out to
+exactly `gh auth token`, so a non-empty answer there is not a proxy -- it is
+the same command returning the same result the fallback will get. A count of
+0, or a non-zero exit, means the fallback finds nothing on this host, and that
+is the 2026-09-08 failure reproduced.
+
+*Consumption is a separate question.* Nothing the CLI exposes reports
+credential resolution -- there are four subcommands (`serve`, `submit`,
+`--version`, `--help`) and no `doctor`. The only thing that exercises
+`Credentials.get/2` end to end is a real send, and Step 5 already did that
+inside the container. Repeating it here would file a second issue for no new
+information, so this step stops deliberately at whether a token is *findable*.
+====
 
 === Step 8: the verdict
 
