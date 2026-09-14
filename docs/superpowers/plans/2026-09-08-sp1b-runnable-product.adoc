@@ -4796,7 +4796,7 @@ waits. Read it, then type `y`.
 
 [source]
 ----
-Send this to github? [y/N]
+Send this report? [y/N]
 ----
 
 Anything other than `y` sends nothing. There is no `--yes`, and no flag that
