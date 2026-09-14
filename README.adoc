@@ -214,6 +214,29 @@ The AI agent will read this prompt and execute all setup steps automatically.
 [[manual-quick-start]]
 === Manual Quick Start
 
+Four things must be installed before the clone: Git, Elixir 1.15 or newer,
+Erlang/OTP 26 or newer, and the GitHub CLI (`gh`). A bare container or a
+freshly imaged machine has none of them.
+
+[source,bash]
+----
+# Fedora/RHEL
+sudo dnf install git elixir erlang gh
+
+# Debian/Ubuntu
+sudo apt install git elixir erlang gh
+
+# macOS
+brew install git elixir gh
+----
+
+If the distribution's Elixir is older than 1.15, the mise and asdf routes are
+in link:docs/AI_INSTALLATION_GUIDE.adoc[the installation guide].
+
+Authentication is needed only for a real send, never for the `--dry-run`
+below. `gh auth login` lets the GitHub CLI hold the token; `GITHUB_TOKEN` in
+the environment is read first when it is set.
+
 [source,bash]
 ----
 # Clone and build
