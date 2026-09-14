@@ -1,88 +1,58 @@
-# Feedback-a-tron Container
-# Build with: nerdctl build -t feedback-a-tron .
-# Or: podman build -t feedback-a-tron .
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# feedback-o-tron — HTTP intake image.
+# Build from the repository root:
+#   podman build -f packaging/Containerfile -t feedback-o-tron .
 
-# Stage 1: Build Elixir MCP server
-FROM cgr.dev/chainguard/wolfi-base AS elixir-builder
+# ---- Stage 1: build the OTP release -----------------------------------
+FROM cgr.dev/chainguard/wolfi-base@sha256:9a8d954d8f03a21bcf2be73d4628f0ad26d35c3275469925de63a34eebd58f13 AS builder
 
-RUN apk add --no-cache \
-    elixir \
-    erlang \
-    git \
-    build-base
+RUN apk add --no-cache elixir erlang git build-base
 
 WORKDIR /build/elixir-mcp
 
+# Dependencies first, so a source-only change does not refetch them.
 COPY elixir-mcp/mix.exs elixir-mcp/mix.lock ./
 RUN mix local.hex --force && \
     mix local.rebar --force && \
-    mix deps.get --only prod
+    MIX_ENV=prod mix deps.get --only prod
 
 COPY elixir-mcp/ ./
 RUN MIX_ENV=prod mix release
 
-# Stage 2: Build Julia stats (optional)
-FROM cgr.dev/chainguard/wolfi-base AS julia-builder
+# ---- Stage 2: runtime -------------------------------------------------
+FROM cgr.dev/chainguard/wolfi-base@sha256:9a8d954d8f03a21bcf2be73d4628f0ad26d35c3275469925de63a34eebd58f13 AS runtime
 
-RUN apk add --no-cache julia
+# `mix release` bundles ERTS, so no erlang package here — only the shared
+# libraries it links against.
+RUN apk add --no-cache ca-certificates ncurses openssl libstdc++
 
-WORKDIR /build/julia-stats
-COPY julia-stats/ ./
-
-# Precompile Julia packages
-RUN julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
-
-# Stage 3: Runtime image
-FROM cgr.dev/chainguard/wolfi-base AS runtime
-
-# Install runtime dependencies only
-RUN apk add --no-cache \
-    erlang \
-    julia \
-    nickel
-
-# Create non-root user
 RUN adduser -D -u 1000 feedback
 USER feedback
 WORKDIR /home/feedback
 
-# Copy Elixir release
-COPY --from=elixir-builder --chown=feedback:feedback \
-    /build/elixir-mcp/_build/prod/rel/gh_manage ./elixir-mcp/
+COPY --from=builder --chown=feedback:feedback \
+    /build/elixir-mcp/_build/prod/rel/feedback_a_tron ./release/
 
-# Copy Julia package
-COPY --from=julia-builder --chown=feedback:feedback \
-    /build/julia-stats ./julia-stats/
-
-# Copy config schema
-COPY --chown=feedback:feedback config/ ./config/
-
-# Copy scripts
-COPY --chown=feedback:feedback scripts/ ./scripts/
-
-# Copy STATE.scm for reference
-COPY --chown=feedback:feedback STATE.scm ./
-
-# Create data directories
-RUN mkdir -p \
-    /home/feedback/.config/feedback-a-tron \
-    /home/feedback/.local/share/feedback-a-tron
-
-# Environment
+# The HTTP intake is the only door this image opens. It binds all
+# interfaces because the container has its own network namespace; publish
+# it with `-p 127.0.0.1:7722:7722` to keep it on the host's loopback.
 ENV LANG=C.UTF-8 \
     HOME=/home/feedback \
-    PATH="/home/feedback/elixir-mcp/bin:$PATH"
+    FEEDBACK_O_TRON_HTTP=1 \
+    FEEDBACK_O_TRON_HTTP_PORT=7722 \
+    FEEDBACK_O_TRON_HTTP_BIND=0.0.0.0
 
-# Default entrypoint - MCP server mode
-ENTRYPOINT ["/home/feedback/elixir-mcp/bin/gh_manage"]
+EXPOSE 7722
+
+ENTRYPOINT ["/home/feedback/release/bin/feedback_a_tron"]
 CMD ["start"]
 
-# Healthcheck
 HEALTHCHECK --interval=30s --timeout=3s \
-    CMD /home/feedback/elixir-mcp/bin/gh_manage pid || exit 1
+    CMD /home/feedback/release/bin/feedback_a_tron pid || exit 1
 
-# Labels
-LABEL org.opencontainers.image.title="feedback-a-tron" \
-      org.opencontainers.image.description="GitHub repository management with Datalog analysis" \
-      org.opencontainers.image.source="https://github.com/hyperpolymath/feedback-a-tron" \
-      org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.title="feedback-o-tron" \
+      org.opencontainers.image.description="Feedback and bug-report submission for people and AI agents" \
+      org.opencontainers.image.source="https://github.com/hyperpolymath/feedback-o-tron" \
+      org.opencontainers.image.licenses="MPL-2.0"

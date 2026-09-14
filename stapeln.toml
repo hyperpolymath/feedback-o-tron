@@ -1,23 +1,19 @@
 # SPDX-License-Identifier: MPL-2.0
-# stapeln.toml — Layer-based container build for feedback-o-tron
-#
-# stapeln builds containers as composable layers (German: "to stack").
-# Each layer is independently cacheable, verifiable, and signable.
+# Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+# stapeln.toml — layer-based container build for feedback-o-tron.
 
 [metadata]
 name = "feedback-o-tron"
-version = "0.1.0"
-description = "feedback o tron"
+version = "1.0.0"
+description = "Feedback and bug-report submission for people and AI agents"
 author = "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"
 license = "MPL-2.0"
 registry = "ghcr.io/hyperpolymath"
 
 [build]
-containerfile = "Containerfile"
+containerfile = "packaging/Containerfile"
 context = "."
 runtime = "podman"
-
-# ── Layer Definitions ──────────────────────────────────────────
 
 [layers.base]
 description = "Chainguard Wolfi minimal base"
@@ -26,27 +22,29 @@ cache = true
 verify = true
 
 [layers.toolchain]
-description = "Build tools and dependencies"
+description = "Elixir and Erlang build tools"
 extends = "base"
-packages = ["julia"]
+packages = ["elixir", "erlang", "git", "build-base"]
 cache = true
 
 [layers.build]
-description = "feedback-o-tron build"
+description = "OTP release build"
 extends = "toolchain"
-commands = ["julia --project=. -e \"using Pkg; Pkg.instantiate()\""]
+commands = [
+    "cd elixir-mcp && mix local.hex --force && mix local.rebar --force",
+    "cd elixir-mcp && MIX_ENV=prod mix deps.get --only prod",
+    "cd elixir-mcp && MIX_ENV=prod mix release",
+]
 
 [layers.runtime]
-description = "Minimal runtime"
+description = "Release plus its shared libraries; ERTS is bundled"
 from = "cgr.dev/chainguard/wolfi-base:latest"
-packages = ["ca-certificates", "curl"]
+packages = ["ca-certificates", "ncurses", "openssl", "libstdc++"]
 copy-from = [
-    { layer = "build", src = "/app/", dst = "/app/" },
+    { layer = "build", src = "/build/elixir-mcp/_build/prod/rel/feedback_a_tron/", dst = "/home/feedback/release/" },
 ]
-entrypoint = ["/app/bin/feedback-o-tron"]
+entrypoint = ["/home/feedback/release/bin/feedback_a_tron", "start"]
 user = "nonroot"
-
-# ── Security ───────────────────────────────────────────────────
 
 [security]
 non-root = true
@@ -58,33 +56,3 @@ seccomp-profile = "default"
 [security.signing]
 algorithm = "ML-DSA-87"
 provider = "cerro-torre"
-
-[security.sbom]
-format = "spdx-json"
-output = "sbom.spdx.json"
-include-deps = true
-
-# ── Verification ──────────────────────────────────────────────
-
-[verify]
-vordr = true
-svalinn = true
-scan-on-build = true
-fail-on = ["critical", "high"]
-
-# ── Targets ───────────────────────────────────────────────────
-
-[targets.development]
-description = "Full development environment"
-layers = ["base", "toolchain", "build"]
-env = { LOG_LEVEL = "debug" }
-
-[targets.production]
-description = "Production deployment"
-layers = ["runtime"]
-env = { LOG_LEVEL = "info" }
-
-[targets.test]
-description = "Test environment"
-layers = ["base", "toolchain", "build"]
-env = { LOG_LEVEL = "debug" }
