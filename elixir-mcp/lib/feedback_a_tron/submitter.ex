@@ -100,7 +100,7 @@ defmodule FeedbackATron.Submitter do
         # SP1b pre-ledger rule. Nothing leaves this machine unless a person saw
         # the whole payload and typed y. Only CLI.submit/3 attaches :consent,
         # and only after tty_confirm/0 returned true. Every other caller — the
-        # MCP door, the HTTP door, BatchReviewer — lands in the drafted clause
+        # MCP door and the HTTP door — lands in the drafted clause
         # by construction, because there is no way to assert consent from
         # outside the CLI's interactive confirm.
         consented = Keyword.get(opts, :consent) == :human_confirmed

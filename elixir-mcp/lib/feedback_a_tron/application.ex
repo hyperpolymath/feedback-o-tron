@@ -12,9 +12,6 @@ defmodule FeedbackATron.Application do
   - NetworkVerifier: Pre-flight network checks
   - Doors: MCP stdio server and HTTP intake, opened by `FeedbackATron.Doors`
     from the `:doors` application env or the `FEEDBACK_O_TRON_*` environment
-  - MigrationObserver: ReScript migration session tracking (optional)
-  - BatchReviewer: Issue review queue (optional, with migration observer)
-  - Pipeline.Supervisor: GenStage pipeline (optional, with migration observer)
   """
 
   use Application
@@ -27,10 +24,7 @@ defmodule FeedbackATron.Application do
         System.get_env()
       )
 
-    children =
-      core_children() ++
-        FeedbackATron.Doors.children(doors) ++
-        migration_observer_children()
+    children = core_children() ++ FeedbackATron.Doors.children(doors)
 
     opts = [strategy: :one_for_one, name: FeedbackATron.Supervisor]
     Supervisor.start_link(children, opts)
@@ -46,33 +40,5 @@ defmodule FeedbackATron.Application do
       # Network verification (optional, can be disabled)
       {FeedbackATron.NetworkVerifier, enabled: true}
     ]
-  end
-
-  defp migration_observer_children do
-    if migration_observer_enabled?() do
-      [
-        FeedbackATron.MigrationObserver,
-        FeedbackATron.BatchReviewer,
-        FeedbackATron.Pipeline.Supervisor
-      ]
-    else
-      []
-    end
-  end
-
-  defp migration_observer_enabled? do
-    env_val = System.get_env("FEEDBACK_A_TRON_MIGRATION_MODE")
-
-    env_on? =
-      case env_val do
-        nil ->
-          false
-
-        value ->
-          normalized = value |> String.trim() |> String.downcase()
-          Enum.member?(["1", "true", "yes", "on"], normalized)
-      end
-
-    env_on? || Enum.any?(System.argv(), &(&1 == "--migration-observer"))
   end
 end
