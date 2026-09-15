@@ -1,23 +1,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # STATE.a2ml — Project state checkpoint
 # Converted from STATE.scm on 2026-03-15
-# Updated 2026-07-09
+# Updated 2026-09-14
 
 [metadata]
 project = "feedback-o-tron"
-version = "1.2.0-dev"
-last-updated = "2026-07-09"
+version = "1.0.0"
+last-updated = "2026-09-14"
 status = "active-development"
 
 [project-context]
 name = "feedback-o-tron"
-completion-percentage = 75
-phase = "Synthesis Engine + honest reconciliation"
+completion-percentage = 22
+phase = "SP1b runnable product; SP2-SP8 outstanding"
 
 [components]
 cli = "100%"
-mcp-server = "100% (research_feedback, synthesize_feedback, submit_feedback, migration_observe)"
-http-intake = "done (Bandit :7722, localhost-only, off by default; boj bug-filing-mcp wire)"
+mcp-server = "3 tools registered (submit_feedback, research_feedback, synthesize_feedback); migration_observe is written but not registered"
+http-intake = "Bandit on 127.0.0.1:7722, off unless FEEDBACK_O_TRON_HTTP=1; opened by FeedbackATron.Doors"
 synthesis-engine = "done (this PR: TemplateFetcher, TemplateCache, IntentClassifier, Hydrator, Research, Synthesizer, FormValidator, FormRenderer, TextSimilarity)"
 channels-github = "100%"
 channels-gitlab = "90%"

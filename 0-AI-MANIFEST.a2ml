@@ -1,7 +1,7 @@
 # AI Manifest for feedback-o-tron
 # Media-Type: application/vnd.hyperpolymath.ai-manifest+a2ml
 # Version: 1.0.0
-# Updated: 2026-02-07
+# Updated: 2026-09-14
 
 ## Repository Overview
 
@@ -115,7 +115,7 @@ LICENSE.txt                 # MPL-2.0
 ### Testing
 
 - Unit tests: `mix test`
-- Integration: `./feedback-a-tron submit --dry-run ...`
+- Integration: `./feedback-o-tron submit --dry-run ...`
 - Real submission: Use test repos, not production
 
 ### Bug Fixes
@@ -130,25 +130,37 @@ LICENSE.txt                 # MPL-2.0
 
 ### MCP Server (Claude Code)
 
-Configure in `~/.config/claude/mcp_servers.json`:
+Register the server with the host's own CLI. For Claude Code:
+
+```bash
+claude mcp add feedback-o-tron -e GITHUB_TOKEN=$GITHUB_TOKEN \
+    -- /full/path/to/feedback-o-tron/elixir-mcp/feedback-o-tron serve
+```
+
+For a host that takes a JSON config file (a project `.mcp.json`, or the
+host's own settings file), the stanza is:
 
 ```json
 {
-  "feedback-o-tron": {
-    "command": "/path/to/feedback-a-tron",
-    "args": ["--mcp-server"],
-    "env": {
-      "GITHUB_TOKEN": "${GITHUB_TOKEN}",
-      "BUGZILLA_API_KEY": "${BUGZILLA_API_KEY}"
+  "mcpServers": {
+    "feedback-o-tron": {
+      "command": "/full/path/to/feedback-o-tron/elixir-mcp/feedback-o-tron",
+      "args": ["serve"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
     }
   }
 }
 ```
 
+The `mcpServers` wrapper is required. Without it the file parses and
+configures nothing.
+
 ### Standalone CLI
 
 ```bash
-./feedback-a-tron submit --repo "..." --title "..." --body "..." --platform bugzilla --component "..." --version "..."
+./feedback-o-tron submit --repo "..." --title "..." --body "..." --platform bugzilla --component "..." --version "..."
 ```
 
 ### As Library

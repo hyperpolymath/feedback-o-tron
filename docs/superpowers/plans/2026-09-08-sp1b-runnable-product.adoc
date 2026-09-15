@@ -2349,7 +2349,7 @@ doctor:
             warn=$((warn + 1))
         fi
     }
-    probe need elixir "1.16 or newer"
+    probe need elixir "1.15 or newer"
     probe need erl    "OTP 26 or newer"
     probe need git    "2.40 or newer"
     probe need gh     "GitHub CLI, required to submit issues"
@@ -2420,7 +2420,7 @@ prints `X` (there is no `READINESS.md` in this repository). `must-check` and
 by hand, not through just, because just could not run them before this task.
 
 NOTE: `doctor` reports whichever Elixir is first on `PATH`. Without the
-Step 0.2 export that is 1.18.3 on the owner's host, which clears the 1.16
+Step 0.2 export that is 1.18.3 on the owner's host, which clears the 1.15
 floor and is *not* the 1.19.5 the rest of this plan is rehearsed against.
 `doctor` is a "can you build it at all" check, not a matrix check; Task 15's
 CI job pins the versions.
@@ -3574,7 +3574,32 @@ grep -c 'a-tron' README.adoc; echo "grep rc=$?"
 
 Expected: no output from `grep -c`'s match (it prints `0`) and `rc=1`.
 
-* [ ] *Step 16.2: Fix the manual quick start.* Replace lines 219-241:
+* [ ] *Step 16.2: Fix the manual quick start.* Replace lines 219-241 with a
+prerequisites block and then the commands. Without the first half a reader on
+a bare machine dies on the clone, which is the very first line.
+
+Four things must be installed before the clone: Git, Elixir 1.15 or newer,
+Erlang/OTP 26 or newer, and the GitHub CLI (`gh`). A bare container or a
+freshly imaged machine has none of them.
+
+[source,bash]
+----
+# Fedora/RHEL
+sudo dnf install git elixir erlang gh
+
+# Debian/Ubuntu
+sudo apt install git elixir erlang gh
+
+# macOS
+brew install git elixir gh
+----
+
+If the distribution's Elixir is older than 1.15, the mise and asdf routes are
+in link:docs/AI_INSTALLATION_GUIDE.adoc[the installation guide].
+
+Authentication is needed only for a real send, never for the `--dry-run`
+below. `gh auth login` lets the GitHub CLI hold the token; `GITHUB_TOKEN` in
+the environment is read first when it is set.
 
 [source,bash]
 ----
@@ -3677,8 +3702,8 @@ After setup, drafting a report is yours to run and mine to confirm:
 
   ./feedback-o-tron submit --repo "owner/repo" --title "..." --body "..." --platform github
 
-The command prints the entire payload and waits for a typed "y". You type
-it, not me — with no terminal the command refuses and exits 3. Add
+The command prints the entire payload and waits for a typed "y". I type
+it, not you — with no terminal the command refuses and exits 3. Add
 --dry-run to see the payload and send nothing.
 
 Project status is in .machine_readable/6a2/STATE.a2ml.
@@ -3896,7 +3921,7 @@ a typo and is not — the repository and the binary have the same name. Step
 
 [source,bash]
 ----
-elixir --version    # need 1.16 or newer
+elixir --version    # need 1.15 or newer
 erl -version        # need OTP 26 or newer
 git --version
 gh --version        # GitHub CLI - required for the GitHub platform
@@ -3922,7 +3947,7 @@ sudo apt install elixir erlang gh
 brew install elixir gh
 ----
 
-If the distribution's Elixir is older than 1.16, use mise, which the
+If the distribution's Elixir is older than 1.15, use mise, which the
 repository already configures:
 
 [source,bash]
@@ -4057,7 +4082,7 @@ at `:369-370` and add a `gh` row:
 |The deduplicator found an existing report. Read it first; if it is genuinely different, change the title so it is.
 
 |"stdin is not a terminal" (exit 3)
-|Correct behaviour, not a fault. The confirm prompt needs a person. Run the command yourself, or add `--dry-run` to preview it.
+|Correct behaviour, not a fault. The confirm prompt needs a person at a terminal; an assistant cannot supply the `y`. The person at the keyboard runs the command. Adding `--dry-run` prints the same payload and sends nothing.
 
 |"gh: command not found"
 |Install the GitHub CLI from your distribution, or export `GITHUB_TOKEN` directly.
@@ -4070,7 +4095,7 @@ turn after it:
 
 [source,text]
 ----
-AI: Which version? Run `elixir --version` — anything below 1.16 will not
+AI: Which version? Run `elixir --version` — anything below 1.15 will not
 compile this project.
 
 User: 1.19.5
@@ -4260,7 +4285,7 @@ mix escript.build          # produces ./feedback-o-tron
 ./feedback-o-tron --version
 ----
 
-Requires Elixir 1.16 or newer on OTP 26 or newer. CI tests 1.15, 1.16 and
+Requires Elixir 1.15 or newer on OTP 26 or newer. CI tests 1.15, 1.16 and
 1.17 on OTP 26, plus 1.19 on OTP 27, which is what this engine is developed
 against.
 
@@ -4664,6 +4689,15 @@ An assistant may read the transcript afterwards and act on what it says.
 *Files:* none. This task changes nothing; it is the test of everything
 Tasks 1-18 changed.
 
+The steps below are also on the branch as `docs/STRANGER_REHEARSAL.adoc`, in
+paste-ready form with the watch-list and the verdict template. That file is
+the one to work from at the keyboard: it declares the two substitutions a
+pre-merge container run forces (clone the branch, drop the absent `sudo`) so
+that neither is decided mid-run, and it wraps the session in `script` so the
+transcript survives `--rm`. It is deliberately AsciiDoc rather than a shell
+script -- a file with nothing to invoke cannot be invoked by an assistant, a
+`just` recipe or CI.
+
 *Interfaces:*
 
 * Consumes: the root `README.adoc` as Task 16 leaves it — and nothing else.
@@ -4771,7 +4805,7 @@ waits. Read it, then type `y`.
 
 [source]
 ----
-Send this to github? [y/N]
+Send this report? [y/N]
 ----
 
 Anything other than `y` sends nothing. There is no `--yes`, and no flag that
@@ -4801,19 +4835,37 @@ so nothing is being circumvented.
 * [ ] *Step 20.7: Repeat the credential step on the host, outside the
 container.*
 
-On the owner's desktop, with the keyring session that Step 20.3 quotes:
+On the owner's desktop, in the session that holds the `gh` credential:
 
 [source,bash]
 ----
 cd elixir-mcp
+grep -c 'oauth_token' ~/.config/gh/hosts.yml
+gh auth token | wc -c
 ./feedback-o-tron submit --repo "hyperpolymath/feedback-o-tron" \
-  --title "[stranger test] keyring path" --body "checking credential lookup" \
+  --title "[stranger test] host credential path" \
+  --body "checking credential lookup" \
   --platform github --dry-run
 ----
 
-Expected: the payload prints and the dry run completes. If it fails with a
-missing-credential error, Task 8 did not land correctly — that is the exact
-case it exists for, and the container could not have told you.
+Expected: the token count is non-empty, the payload prints, and the dry run
+completes.
+
+The first number decides which path this step tests. `Credentials.load/0`
+reads `~/.config/gh/hosts.yml` first and falls back to `gh auth token` only if
+that finds nothing, so a non-zero count means Task 8's fallback is *not*
+exercised here — the fallback is measurable only on a machine where the count
+is 0. Record which number appeared; the step proves a different thing in each
+case.
+
+The token count is the cell that carries the result. A dry run cannot fail
+with a missing-credential error: Submitter returns the dry-run preview before
+`Credentials.get/2` is reached, so `[DRY RUN] github: Would submit` appears
+whether or not a token was found. A count of 0 means `gh` itself holds no
+token on this host, and the cure is `gh auth login --insecure-storage`, not a
+change to this project — the opposite shape from 2026-09-08, where the token
+was present and Feedback-o-Tron never asked for it. Do not read a 0 here as a
+regression.
 
 * [ ] *Step 20.8: Write the verdict into the PR.*
 

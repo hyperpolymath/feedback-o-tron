@@ -71,7 +71,7 @@ Your AI will:
 After setup, your AI will test with:
 
 ----
-./feedback-a-tron submit \
+./feedback-o-tron submit \
   --repo "test/repo" \
   --title "Test submission" \
   --body "Verifying installation" \
@@ -82,8 +82,8 @@ After setup, your AI will test with:
 Expected output:
 
 ----
-Submission ABC123 completed
-  [DRY RUN] github: Would submit to test/repo
+✅ Submission <id> completed
+  [DRY RUN] github: Would submit
 ----
 
 [[ai-implementation]]
@@ -113,32 +113,47 @@ I can help you set up feedback-o-tron for automated bug reporting.
 
 [source,bash]
 ----
-# Check Elixir
-elixir --version    # Need 1.15+
-erl -version        # Need OTP 26+
-git --version       # Need git
-mix --version       # Comes with Elixir
+elixir --version    # need 1.15 or newer
+erl -version        # need OTP 26 or newer
+git --version
+gh --version        # GitHub CLI - required for the GitHub platform
 ----
 
-If Elixir is missing, provide installation for their OS:
+`gh` is not optional for GitHub. feedback-o-tron reads a token from
+`GITHUB_TOKEN`, then from the gh CLI; without gh, the person has to mint and
+export a personal access token by hand. It is also not available through
+mise, so it must come from the system package manager.
 
+Install Git, Elixir and gh from the distribution first -- that is what the
+project tests against and what receives security updates. A bare container or a
+freshly imaged machine has none of the four:
+
+[source,bash]
 ----
 # Fedora/RHEL
-sudo dnf install elixir erlang
+sudo dnf install git elixir erlang gh
 
-# Ubuntu/Debian
-sudo apt install elixir erlang
+# Debian/Ubuntu
+sudo apt install git elixir erlang gh
 
 # macOS
-brew install elixir
+brew install git elixir gh
+----
 
-# asdf (recommended)
-asdf plugin add erlang
-asdf plugin add elixir
-asdf install erlang latest
-asdf install elixir latest
-asdf global erlang latest
-asdf global elixir latest
+If the distribution's Elixir is older than 1.15, use mise, which the
+repository already configures:
+
+[source,bash]
+----
+mise trust && mise install     # reads mise.toml: erlang 27.0, elixir 1.19.5
+----
+
+asdf works too, but pin the versions rather than tracking `latest`:
+
+[source,bash]
+----
+asdf plugin add erlang && asdf plugin add elixir
+asdf install erlang 27.0 && asdf install elixir 1.19.5-otp-27
 ----
 
 ==== Step 3: Present Privacy Notice
@@ -161,11 +176,11 @@ feedback-o-tron will NOT:
 - Collect analytics or phone home
 
 Credential handling:
-  Tokens are loaded from environment variables only
+  Tokens are read from environment variables first, then from the gh CLI
   Never written to disk by feedback-o-tron
   You manage token lifecycle (creation, rotation, revocation)
 
-Audit log location: ./audit.jsonl (local, never uploaded)
+Audit log location: $TMPDIR/feedback_a_tron_audit.jsonl (local, never uploaded)
 
 Do you understand what feedback-o-tron will do with your credentials? (yes/no)
 ----
@@ -187,8 +202,10 @@ mix deps.get
 mix escript.build
 
 # Verify
-./feedback-a-tron --version
+./feedback-o-tron --version
 # Should print: feedback-o-tron v1.0.0
+# If it prints "feedback-o-tron vunknown", the escript was built from a
+# stale _build; run `mix clean` and build again.
 ----
 
 ==== Step 5: Set Up Credentials
@@ -277,37 +294,43 @@ export BITBUCKET_USERNAME=your_username
 
 ==== Step 6: Configure MCP (If Using Claude Code)
 
-If the user wants Claude Code integration:
+For Claude Code, register the server with the CLI:
 
+[source,bash]
 ----
-Add this to ~/.config/claude/mcp_servers.json:
+claude mcp add feedback-o-tron \
+  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+  -- /full/path/to/feedback-o-tron/elixir-mcp/feedback-o-tron serve
 ----
+
+For a host that takes a JSON config file (a project `.mcp.json`, or the
+host's own settings), the stanza is:
 
 [source,json]
 ----
 {
-  "feedback-o-tron": {
-    "command": "/full/path/to/feedback-o-tron/elixir-mcp/feedback-a-tron",
-    "args": ["--mcp-server"],
-    "env": {
-      "GITHUB_TOKEN": "${GITHUB_TOKEN}",
-      "BUGZILLA_API_KEY": "${BUGZILLA_API_KEY}"
+  "mcpServers": {
+    "feedback-o-tron": {
+      "command": "/full/path/to/feedback-o-tron/elixir-mcp/feedback-o-tron",
+      "args": ["serve"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
     }
   }
 }
 ----
 
-----
-Replace /full/path/to/ with the actual path where you cloned it.
-Then restart Claude Code for the MCP server to be available.
-----
+The `mcpServers` wrapper is required; without it the file parses and
+configures nothing. Do not tell people to edit
+`~/.config/claude/mcp_servers.json` -- Claude Code does not read that path.
 
 ==== Step 7: Run Verification Test
 
 [source,bash]
 ----
 # Dry-run test (submits nothing)
-./feedback-a-tron submit \
+./feedback-o-tron submit \
   --repo "test/repo" \
   --title "Installation verification" \
   --body "Testing feedback-o-tron setup" \
@@ -318,32 +341,41 @@ Then restart Claude Code for the MCP server to be available.
 Expected output:
 
 ----
-Submission ABC123 completed
-  [DRY RUN] github: Would submit to test/repo
+✅ Submission <id> completed
+  [DRY RUN] github: Would submit
 ----
 
 ==== Step 8: Provide Usage Examples
 
 After setup is verified:
 
-----
-Setup complete! Here's how to use feedback-o-tron:
+Setup complete. One thing to know before you use it:
 
-File a bug to GitHub:
-  ./feedback-a-tron submit --repo "owner/repo" --title "Bug title" --body "Details" --platform github
+`submit` prints the entire payload and waits for a typed "y". The person at
+the keyboard types it — an assistant cannot. With no terminal on stdin the
+command refuses and exits 3:
 
-File to Bugzilla (Fedora):
-  ./feedback-a-tron submit --repo "Fedora" --title "App crashes" --body "Details" --platform bugzilla --component "kde" --version "43"
+  stdin is not a terminal; refusing to send without a person's yes
 
-Multi-platform:
-  ./feedback-a-tron submit --repo "owner/repo" --title "Bug" --body "..." --platform github --platform gitlab
+There is no --yes flag. An assistant can draft the report and run it with
+--dry-run, which prints the same payload and sends nothing; the person runs
+the same command without --dry-run when they are happy with it.
 
-Dry-run (always safe):
-  ./feedback-a-tron submit --repo "test" --title "Test" --body "Test" --dry-run
+  # Safe for an assistant to run: prints the payload, sends nothing
+  ./feedback-o-tron submit --repo "owner/repo" --title "Bug title" \
+    --body "Details" --platform github --dry-run
 
-Or if you set up MCP, just tell Claude Code:
-  "File a bug about the crash in maliit-keyboard on Fedora Bugzilla"
-----
+  # Run by the person: prints the payload, waits for y
+  ./feedback-o-tron submit --repo "owner/repo" --title "Bug title" \
+    --body "Details" --platform github
+
+  # Fedora Bugzilla
+  ./feedback-o-tron submit --repo "Fedora" --title "App crashes" \
+    --body "Details" --platform bugzilla --component "kde" --version "43"
+
+Through MCP, ask the host: "Draft a bug report about the crash in
+maliit-keyboard on Fedora Bugzilla." The MCP door drafts and returns the
+payload; sending is the CLI's job, and the CLI asks a person.
 
 ==== Error Handling
 
@@ -369,7 +401,13 @@ Common issues:
 |DNS issue. Check `dig github.com` and internet connection.
 
 |"duplicate detected"
-|Deduplicator working correctly. Use `--force` to submit anyway.
+|The deduplicator found an existing report. Read it first; if it is genuinely different, change the title so it is.
+
+|"stdin is not a terminal" (exit 3)
+|Correct behaviour, not a fault. The confirm prompt needs a person at a terminal; an assistant cannot supply the `y`. The person at the keyboard runs the command. Adding `--dry-run` prints the same payload and sends nothing.
+
+|"gh: command not found"
+|Install the GitHub CLI from your distribution, or export `GITHUB_TOKEN` directly.
 |===
 
 == Example Conversation
@@ -386,6 +424,13 @@ AI: I can help set up feedback-o-tron for automated bug reporting.
 3. Do you want Claude Code MCP integration or just CLI?
 
 User: GitHub and Fedora Bugzilla. I have Elixir via asdf. Just CLI for now.
+
+AI: Which version? Run `elixir --version` — anything below 1.15 will not
+compile this project.
+
+User: 1.19.5
+
+AI: Good.
 
 AI: Before we start, here's what feedback-o-tron does with your credentials:
 [Shows privacy notice]
@@ -419,9 +464,14 @@ Generate an API key, then:
 User: Set
 
 AI: Let's test with a dry-run:
-  ./feedback-a-tron submit --repo "test/repo" --title "Test" --body "Test" --platform github --dry-run
+  ./feedback-o-tron submit --repo "test/repo" --title "Test" --body "Test" --platform github --dry-run
 
 User: Got "[DRY RUN] github: Would submit"
+
+AI: That dry run sent nothing. When you want to file for real, drop
+--dry-run and the command will print the whole payload and wait for you to
+type y. I can draft reports for you, but I can't type that y -- with no
+terminal the command refuses.
 
 AI: You're all set! Here are some examples:
 [Shows usage examples]

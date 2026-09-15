@@ -1,5 +1,7 @@
 ;; SPDX-License-Identifier: MPL-2.0
-;; Guix development environment.
+;; Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+;;
+;; Guix development environment for feedback-o-tron.
 ;; Usage: guix shell -D -f guix.scm
 
 (use-modules (guix packages)
@@ -7,22 +9,21 @@
              (guix licenses)
              (gnu packages base)
              (gnu packages bash)
-             (gnu packages base)
-             (gnu packages java)
-             (gnu packages rust)
-             (gnu packages cmake)
-             (gnu packages zig)
-             (gnu packages golang)
-             (gnu packages node)
-             (gnu packages python))
+             (gnu packages erlang)
+             (gnu packages elixir)
+             (gnu packages version-control))
 
 (package
   (name "feedback-o-tron")
-  (version "0.1.0")
+  (version "1.0.0")
   (source #f)
   (build-system gnu-build-system)
-  (inputs (list coreutils bash  make openjdk rust cmake zig go node python))
-  (synopsis "feedback-o-tron")
-  (description "feedback-o-tron — part of the hyperpolymath ecosystem.")
+  (inputs (list coreutils bash git erlang elixir))
+  (synopsis "Feedback and bug-report submission for people and AI agents")
+  (description
+   "Feedback-o-Tron submits feedback and bug reports to GitHub, GitLab, email
+and NNTP, from a command line, from an MCP host, or over a loopback HTTP
+intake.  Nothing leaves the machine until a person has seen the whole payload
+and said yes.")
   (home-page "https://github.com/hyperpolymath/feedback-o-tron")
-  (license ((@@ (guix licenses) license) "MPL-2.0" "https://github.com/hyperpolymath/palimpsest-license")))
+  (license mpl2.0))

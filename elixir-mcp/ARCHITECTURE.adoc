@@ -749,186 +749,23 @@ end
 
 === Packaging
 
-==== Wolfi/nerdctl Container
+Two routes, both defined in the repository rather than described here.
 
-[source,dockerfile]
-----
-# Dockerfile.wolfi
-FROM cgr.dev/chainguard/wolfi-base
+`packaging/Containerfile` builds a container in two stages: a builder that
+runs `MIX_ENV=prod mix release`, then a Wolfi runtime holding the release
+and the shared libraries it links against. `mix release` bundles ERTS, so
+the runtime installs no Erlang. The only door the image opens is the HTTP
+intake on 7722. `stapeln.toml` describes the same build in layer form.
 
-# Install runtime dependencies
-RUN apk add --no-cache \
-    erlang \
-    elixir \
-    julia \
-    oxigraph \
-    sqlite \
-    ca-certificates
+`guix.scm` is the development environment: `guix shell -D -f guix.scm`, or
+`just guix-shell`. `mise.toml` is the primary route and pins the same
+Erlang and Elixir versions CI tests against.
 
-# Create non-root user
-RUN adduser -D observatory
-USER observatory
-WORKDIR /app
-
-# Copy release
-COPY --chown=observatory:observatory _build/prod/rel/gh_manage ./
-
-# Copy Julia analytics
-COPY --chown=observatory:observatory analytics ./analytics
-
-# Copy frontend build
-COPY --chown=observatory:observatory frontend/dist ./priv/static
-
-# Configuration
-ENV OBSERVATORY_CONFIG=/app/config/observatory.ncl
-VOLUME ["/app/config", "/app/data"]
-
-EXPOSE 4000 8080 8787
-
-CMD ["./bin/gh_manage", "start"]
-----
-
-==== Guix Channel
-
-[source,scheme]
-----
-;; guix/observatory/packages.scm
-(define-module (observatory packages)
-  #:use-module (guix packages)
-  #:use-module (guix download)
-  #:use-module (guix git-download)
-  #:use-module (guix build-system mix)
-  #:use-module (guix build-system julia)
-  #:use-module (gnu packages erlang)
-  #:use-module (gnu packages julia))
-
-(define-public observatory
-  (package
-    (name "observatory")
-    (version "0.1.0")
-    (source (origin
-              (method git-fetch)
-              (uri (git-reference
-                    (url "https://gitlab.com/jdajewell/observatory")
-                    (commit (string-append "v" version))))
-              (sha256 (base32 "..."))))
-    (build-system mix-build-system)
-    (inputs
-     (list erlang elixir oxigraph sqlite julia))
-    (propagated-inputs
-     (list observatory-julia-analytics))
-    (synopsis "GitHub intelligence platform")
-    (description "Observatory provides comprehensive GitHub repository 
-analysis with Datalog-based inference, SPARQL querying, and real-time 
-change tracking.")
-    (home-page "https://gitlab.com/jdajewell/observatory")
-    (license license:mpl2.0)))
-
-(define-public observatory-julia-analytics
-  (package
-    (name "observatory-julia-analytics")
-    (version "0.1.0")
-    (source ...)
-    (build-system julia-build-system)
-    (inputs
-     (list julia-dataframes julia-http julia-json3))
-    (synopsis "Julia analytics engine for Observatory")
-    (description "Statistical analysis module for GitHub contribution tracking.")
-    (home-page "https://gitlab.com/jdajewell/observatory")
-    (license license:mpl2.0)))
-
-;; Service definition
-(define-public observatory-service-type
-  (service-type
-   (name 'observatory)
-   (extensions
-    (list (service-extension shepherd-root-service-type
-                             observatory-shepherd-service)))
-   (default-value (observatory-configuration))
-   (description "Run the Observatory GitHub intelligence platform.")))
-----
-
-==== Guix Flake (Fallback)
-
-[source,guix]
-----
-# flake.guix
-{
-  description = "Observatory - GitHub Intelligence Platform";
-
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-    nickel.url = "github:tweag/nickel";
-  };
-
-  outputs = { self, nixpkgs, flake-utils, nickel }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = nixpkgs.legacyPackages.${system};
-        
-        elixirPackage = pkgs.beam.packages.erlang_26.elixir_1_16;
-        
-        observatoryDeps = with pkgs; [
-          elixirPackage
-          erlang_26
-          julia
-          oxigraph
-          sqlite
-          nickel.packages.${system}.default
-        ];
-        
-      in {
-        packages.default = pkgs.mixRelease {
-          pname = "observatory";
-          version = "0.1.0";
-          src = ./.;
-          mixNixDeps = import ./deps.guix { inherit pkgs; };
-        };
-
-        devShells.default = pkgs.mkShell {
-          buildInputs = observatoryDeps ++ [
-            pkgs.nodePackages.npm  # For AffineScript build
-            pkgs.nerdctl
-          ];
-          
-          shellHook = ''
-            export MIX_HOME=$PWD/.mix
-            export HEX_HOME=$PWD/.hex
-          '';
-        };
-
-        # NixOS module
-        nixosModules.default = { config, lib, pkgs, ... }: {
-          options.services.observatory = {
-            enable = lib.mkEnableOption "Observatory";
-            configFile = lib.mkOption {
-              type = lib.types.path;
-              description = "Path to Nickel configuration";
-            };
-          };
-          
-          config = lib.mkIf config.services.observatory.enable {
-            systemd.services.observatory = {
-              description = "Observatory GitHub Intelligence";
-              after = [ "network.target" ];
-              wantedBy = [ "multi-user.target" ];
-              serviceConfig = {
-                ExecStart = "${self.packages.${system}.default}/bin/observatory start";
-                Restart = "always";
-                DynamicUser = true;
-                StateDirectory = "observatory";
-              };
-              environment = {
-                OBSERVATORY_CONFIG = config.services.observatory.configFile;
-              };
-            };
-          };
-        };
-      }
-    );
-}
-----
+Neither build is reproduced in this document. A build definition copied into
+prose is a second definition, and the two drift: the section that used to
+stand here described the Observatory project's image — `bin/gh_manage`,
+`OBSERVATORY_CONFIG`, `EXPOSE 4000 8080 8787` — alongside a Guix channel for
+`(observatory packages)` and a Nix flake under a heading calling it Guix.
 
 === What’s Built vs TODO
 

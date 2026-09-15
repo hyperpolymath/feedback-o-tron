@@ -7,72 +7,201 @@ defmodule FeedbackATron.CLI do
   Supports both direct CLI usage and MCP server mode for Claude integration.
   """
 
-  alias FeedbackATron.{Submitter, MCP}
-  require Logger
+  alias FeedbackATron.Submitter
 
+  @spec main([String.t()]) :: no_return()
   def main(args) do
-    case parse_args(args) do
-      {:mcp_server, opts} ->
-        Logger.info("Starting MCP server mode...")
-        Application.ensure_all_started(:feedback_a_tron)
-        MCP.Server.start_link(opts)
-        :timer.sleep(:infinity)
-
-      {:submit, issue, opts} ->
-        Logger.info("Submitting issue: #{issue.title}")
-        Application.ensure_all_started(:feedback_a_tron)
-
-        case Submitter.submit(issue, opts) do
-          {:ok, id, results} ->
-            IO.puts("\n✅ Submission #{id} completed")
-            print_results(results)
-            System.halt(0)
-
-          {:error, reason} ->
-            IO.puts("\n❌ Submission failed: #{inspect(reason)}")
-            System.halt(1)
-        end
-
-      {:version} ->
-        IO.puts("feedback-o-tron v#{version()}")
-        System.halt(0)
-
-      {:help} ->
-        print_help()
-        System.halt(0)
-
-      {:error, message} ->
-        IO.puts("Error: #{message}")
-        print_help()
-        System.halt(1)
+    case run(args) do
+      {:halt, code} -> System.halt(code)
+      :running -> Process.sleep(:infinity)
     end
   end
 
-  defp parse_args(["--mcp-server" | _rest]) do
-    {:mcp_server, []}
+  @doc false
+  @spec run([String.t()], keyword()) :: {:halt, non_neg_integer()} | :running
+  def run(args, opts \\ []) do
+    case parse_args(args) do
+      {:serve, doors} ->
+        if List.first(args) == "--mcp-server" do
+          IO.puts(
+            :stderr,
+            "feedback-o-tron: --mcp-server is deprecated; use `feedback-o-tron serve`"
+          )
+        end
+
+        Application.put_env(:feedback_a_tron, :doors, doors)
+        {:ok, _} = Application.ensure_all_started(:feedback_a_tron)
+        :running
+
+      {:submit, issue, submit_opts} ->
+        submit(issue, submit_opts, opts)
+
+      {:version} ->
+        IO.puts("feedback-o-tron v#{version()}")
+        {:halt, 0}
+
+      {:help} ->
+        print_help(:stdio)
+        {:halt, 0}
+
+      {:error, message} ->
+        IO.puts(:stderr, "Error: #{message}")
+        print_help(:stderr)
+        {:halt, 1}
+    end
   end
 
-  defp parse_args(["--version" | _]) do
-    {:version}
-  end
+  @doc false
+  @spec parse_args([String.t()]) ::
+          {:serve, keyword()}
+          | {:submit, map(), keyword()}
+          | {:version}
+          | {:help}
+          | {:error, String.t()}
+  def parse_args(["serve" | rest]), do: parse_serve_flags(rest, mcp_stdio: true, http: true)
 
-  defp parse_args(["--help" | _]) do
-    {:help}
-  end
+  def parse_args(["--mcp-server" | rest]),
+    do: parse_serve_flags(rest, mcp_stdio: true, http: true)
 
-  defp parse_args(["submit" | rest]) do
+  def parse_args(["--version" | _]), do: {:version}
+  def parse_args(["--help" | _]), do: {:help}
+
+  def parse_args(["submit" | rest]) do
     case parse_submit_args(rest) do
       {:ok, issue, opts} -> {:submit, issue, opts}
       {:error, msg} -> {:error, msg}
     end
   end
 
-  defp parse_args([]) do
-    {:help}
+  def parse_args([]), do: {:help}
+  def parse_args([other | _]), do: {:error, "Unknown command: #{other}"}
+
+  defp parse_serve_flags([], doors) do
+    if doors[:mcp_stdio] or doors[:http] do
+      {:serve, doors}
+    else
+      {:error, "serve: both doors closed (--no-stdio and --no-http); nothing to serve"}
+    end
   end
 
-  defp parse_args(_) do
-    {:error, "Unknown command"}
+  defp parse_serve_flags(["--no-stdio" | rest], doors),
+    do: parse_serve_flags(rest, Keyword.put(doors, :mcp_stdio, false))
+
+  defp parse_serve_flags(["--no-http" | rest], doors),
+    do: parse_serve_flags(rest, Keyword.put(doors, :http, false))
+
+  defp parse_serve_flags(["--http-port", value | rest], doors) do
+    case Integer.parse(value) do
+      {port, ""} when port in 1..65535 ->
+        parse_serve_flags(rest, Keyword.put(doors, :http_port, port))
+
+      _ ->
+        {:error, "Bad --http-port: #{value} (expected 1..65535)"}
+    end
+  end
+
+  defp parse_serve_flags([flag | _], _doors), do: {:error, "Unknown serve flag: #{flag}"}
+
+  defp submit(issue, submit_opts, run_opts) do
+    {:ok, _} = Application.ensure_all_started(:feedback_a_tron)
+
+    cond do
+      submit_opts[:dry_run] ->
+        do_submit(issue, submit_opts, run_opts)
+
+      confirm_send(issue, submit_opts, run_opts) ->
+        # The person saw the whole payload and typed y. That yes, and nothing
+        # else, is what lets Submitter really send.
+        do_submit(issue, Keyword.put(submit_opts, :consent, :human_confirmed), run_opts)
+
+      true ->
+        IO.puts(:stderr, "Not sent.")
+        {:halt, 3}
+    end
+  end
+
+  # SP1b pre-ledger rule: nothing leaves the machine from the CLI until a
+  # person has seen the whole payload and typed yes at a terminal. The privacy
+  # ledger (SP3) replaces this with a per-report ledger and standing choices.
+  # There is no --yes flag on purpose.
+  defp confirm_send(issue, submit_opts, run_opts) do
+    IO.puts(payload_preview(issue, submit_opts))
+    confirm = Keyword.get(run_opts, :confirm, &tty_confirm/0)
+    confirm.()
+  end
+
+  defp do_submit(issue, submit_opts, run_opts) do
+    submit_fun = Keyword.get(run_opts, :submit, &Submitter.submit/2)
+
+    case submit_fun.(issue, submit_opts) do
+      {:ok, id, results} ->
+        IO.puts("\n✅ Submission #{id} completed")
+        print_results(results)
+        {:halt, exit_code(results)}
+
+      {:error, reason} ->
+        IO.puts(:stderr, "\n❌ Submission failed: #{inspect(reason)}")
+        {:halt, 1}
+    end
+  end
+
+  @doc false
+  @spec payload_preview(map(), keyword()) :: String.t()
+  def payload_preview(issue, submit_opts) do
+    platforms =
+      submit_opts |> Keyword.get(:platforms, [:github]) |> Enum.map_join(", ", &to_string/1)
+
+    labels = submit_opts |> Keyword.get(:labels, []) |> Enum.join(", ")
+
+    optional =
+      for {label, key} <- [{"Component:   ", :component}, {"Version:     ", :version}],
+          value = Keyword.get(submit_opts, key),
+          not is_nil(value),
+          do: "#{label} #{value}\n"
+
+    """
+    About to send this report. Everything below leaves this machine; nothing else does.
+
+    Destinations: #{platforms}
+    Repository:   #{issue.repo}
+    Title:        #{issue.title}
+    Labels:       #{if labels == "", do: "(none)", else: labels}
+    #{Enum.join(optional)}Body:
+    #{indent(issue.body)}
+    """
+  end
+
+  defp indent(text) do
+    text |> String.split("\n") |> Enum.map_join("\n", &("    " <> &1))
+  end
+
+  defp tty_confirm do
+    if stdin_tty?() do
+      answer = IO.gets("Send this report? [y/N] ")
+      is_binary(answer) and String.downcase(String.trim(answer)) in ["y", "yes"]
+    else
+      IO.puts(
+        :stderr,
+        "feedback-o-tron: stdin is not a terminal; refusing to send without a person's yes. " <>
+          "Use --dry-run to preview."
+      )
+
+      false
+    end
+  end
+
+  # OTP 26+ exports :prim_tty.isatty/1 (it answers false for a pipe and for
+  # a closed stdin); :io.columns/0 is the older proxy for the same question.
+  defp stdin_tty? do
+    if Code.ensure_loaded?(:prim_tty) and function_exported?(:prim_tty, :isatty, 1) do
+      :prim_tty.isatty(:stdin) == true
+    else
+      match?({:ok, _}, :io.columns())
+    end
+  end
+
+  defp exit_code(results) do
+    if Enum.any?(results, &match?({:error, _}, &1)), do: 1, else: 0
   end
 
   defp parse_submit_args(args) do
@@ -170,74 +299,66 @@ defmodule FeedbackATron.CLI do
     end)
   end
 
-  defp print_help do
-    IO.puts("""
-    feedback-o-tron v#{version()} - Automated multi-platform feedback submission
+  defp print_help(device) do
+    IO.puts(device, """
+    feedback-o-tron v#{version()} - multi-platform feedback and bug-report submission
 
     USAGE:
-        feedback-o-tron [COMMAND] [OPTIONS]
+        feedback-o-tron serve [--no-stdio] [--no-http] [--http-port N]
+        feedback-o-tron submit --repo REPO --title TITLE --body BODY [OPTIONS]
+        feedback-o-tron --version
+        feedback-o-tron --help
 
-    COMMANDS:
-        --mcp-server        Start MCP server for Claude Code integration
-        submit              Submit an issue/bug report
-        --version           Show version
-        --help              Show this help
+    SERVE:
+        Runs the engine in this process and opens its doors: the MCP server on
+        stdin/stdout (for Claude Code and other MCP hosts) and the HTTP intake
+        on 127.0.0.1:7722 (for boj and local tools). With the MCP door open
+        the process exits when stdin closes; with --no-stdio it runs until
+        stopped (Ctrl-C or SIGTERM). Environment: FEEDBACK_O_TRON_HTTP_PORT,
+        FEEDBACK_O_TRON_HTTP_BIND.
+        --no-stdio          Do not open the MCP door
+        --no-http           Do not open the HTTP intake
+        --http-port N       HTTP intake port (default 7722)
 
     SUBMIT OPTIONS:
-        --repo REPO         Target repository (owner/repo or product for Bugzilla)
+        --repo REPO         Target repository (owner/repo, or product for Bugzilla)
         --title TITLE       Issue title
-        --body BODY         Issue body (markdown supported)
-        --platform NAME     Target platform (github, gitlab, bitbucket, codeberg, bugzilla, email)
-                            Can be specified multiple times for multi-platform submission
-        --label LABEL       Apply label (can specify multiple)
-        --component NAME    Bugzilla component (e.g., "maliit-keyboard", "plasma-desktop")
-        --version VER       Bugzilla version (e.g., "43", "rawhide")
-        --dry-run           Show what would be submitted without actually submitting
+        --body BODY         Issue body (Markdown)
+        --platform NAME     github (default), gitlab, bitbucket, codeberg, bugzilla, email; repeatable
+        --label LABEL       Apply a label; repeatable
+        --component NAME    Bugzilla component
+        --version VER       Bugzilla version
+        --dry-run           Print what would be sent and send nothing
 
-    PLATFORMS:
-        github              GitHub Issues (via gh CLI or API)
-        gitlab              GitLab Issues (via glab CLI or API)
-        bitbucket           Bitbucket Issues (via API)
-        codeberg            Codeberg Issues (via Gitea API)
-        bugzilla            Bugzilla (via XML-RPC or REST API)
-        email               Email submission
-
-    EXAMPLES:
-        # Submit to GitHub
-        feedback-o-tron submit --repo owner/repo --title "Bug title" --body "Description" --platform github
-
-        # Submit to Bugzilla
-        feedback-o-tron submit --repo fedora --title "maliit crashes" --body "Details..." --platform bugzilla
-
-        # Multi-platform submission
-        feedback-o-tron submit --repo owner/repo --title "SEP Proposal" --body "..." --platform github --platform gitlab
-
-        # Dry run
-        feedback-o-tron submit --repo owner/repo --title "Test" --body "Test" --dry-run
-
-        # Start MCP server for Claude
-        feedback-o-tron --mcp-server
+        Without --dry-run the full payload is printed and you are asked
+        "Send this report? [y/N]". Nothing is sent without a y typed at a
+        terminal; there is no --yes flag.
+        Exit codes: 0 sent (or dry run); 1 bad arguments or a destination
+        failed; 3 not sent.
 
     CREDENTIALS:
-        Set via environment variables:
-        - GITHUB_TOKEN
-        - GITLAB_TOKEN
-        - BITBUCKET_TOKEN
-        - CODEBERG_TOKEN
-        - BUGZILLA_API_KEY (or BUGZILLA_USERNAME + BUGZILLA_PASSWORD)
+        GitHub: `gh auth login` (the gh CLI's token is used), or GITHUB_TOKEN.
+        Others: GITLAB_TOKEN, BITBUCKET_TOKEN, CODEBERG_TOKEN,
+        BUGZILLA_API_KEY (or BUGZILLA_USERNAME + BUGZILLA_PASSWORD).
 
-    MCP INTEGRATION:
-        Add to ~/.config/claude/mcp_servers.json:
+    MCP INTEGRATION (Claude Code):
+        claude mcp add feedback-o-tron -- /full/path/to/feedback-o-tron serve
+        or, in the MCP settings file:
         {
           "feedback-o-tron": {
-            "command": "/path/to/feedback-o-tron",
-            "args": ["--mcp-server"]
+            "command": "/full/path/to/feedback-o-tron",
+            "args": ["serve"]
           }
         }
     """)
   end
 
   defp version do
+    case Application.load(:feedback_a_tron) do
+      :ok -> :ok
+      {:error, {:already_loaded, _}} -> :ok
+    end
+
     case Application.spec(:feedback_a_tron, :vsn) do
       vsn when is_list(vsn) -> List.to_string(vsn)
       _ -> "unknown"

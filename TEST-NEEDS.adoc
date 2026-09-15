@@ -1,5 +1,18 @@
 == Test & Benchmark Requirements
 
+[NOTE]
+====
+SUPERSEDED 2026-09-15. This audit predates PR #93 — the engine now has 318
+passing tests, so "Unit tests: NONE (0 test files found)" below is false — and
+predates the FOT-R-22 retire, which deleted the nine migration-observer,
+batch-reviewer, report-generator and GenStage-pipeline modules still named in
+the file list below. Re-run the audit before acting on any figure here.
+
+VeriSimDB itself is NOT retired: it remains a live estate integration
+(`.machine_readable/integrations/verisimdb.a2ml`, gated by `dogfood-gate.yml`).
+Only the two FoT-internal writers went with the pipeline.
+====
+
 === CRG Grade: C — ACHIEVED 2026-04-04
 
 === Current State

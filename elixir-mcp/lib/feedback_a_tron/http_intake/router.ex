@@ -8,14 +8,19 @@ defmodule FeedbackATron.HTTPIntake.Router do
   real engine (see `docs/AUTONOMOUS-BUG-PIPELINE.adoc`, contract C2 / D0 = new wrapping
   cartridge). It is a thin, localhost-only JSON adapter over the *same* `Submitter.submit/2`
   path used by the MCP `submit_feedback` tool — no separate submission logic, so audit
-  logging, dedup, rate-limiting and dry-run all behave identically.
+  logging, dedup and rate-limiting all behave identically.
+
+  Like the MCP door, this door never sends. Consent is a person reading the whole
+  payload at a terminal and typing y (`feedback-o-tron submit ...`); it cannot be
+  asserted over the wire, so a report filed here comes back
+  `drafted_needs_human_consent`.
 
   Off by default; enabled via `FEEDBACK_A_TRON_HTTP` (see `FeedbackATron.Application`).
 
   ## Routes
 
   - `GET  /health`                     → `{"status":"ok"}`
-  - `POST /api/v1/submit_feedback`     → body `{title, body, repo, platforms?, labels?, dry_run?, skip_dedupe?, template?, template_data?}`
+  - `POST /api/v1/submit_feedback`     → body `{title, body, repo, platforms?, labels?, skip_dedupe?, template?, template_data?}`
   - `POST /api/v1/research_feedback`   → body `{repo, title, body?, limit?, include_templates?}`
   - `POST /api/v1/synthesize_feedback` → body `{raw_feedback, repo, context?, system_state?, template?, network_probe?}`
 
@@ -29,12 +34,16 @@ defmodule FeedbackATron.HTTPIntake.Router do
   alias FeedbackATron.{Params, Submitter}
   alias FeedbackATron.Synthesis.{Research, Synthesizer}
 
+  # SP1b pre-ledger rule: see the moduledoc. Kept identical in substance to the
+  # MCP door's wording so a cartridge relaying either sees the same sentence.
+  @needs_consent_detail "This door never sends. The report was drafted and checked for duplicates, but filing it requires a person: run `feedback-o-tron submit ...` at a terminal, read the whole payload, and type y."
+
   plug(:match)
   plug(Plug.Parsers, parsers: [:json], pass: ["application/json"], json_decoder: Jason)
   plug(:dispatch)
 
   get "/health" do
-    send_json(conn, 200, %{status: "ok", service: "feedback-a-tron", intake: "http"})
+    send_json(conn, 200, %{status: "ok", service: "feedback-o-tron", intake: "http"})
   end
 
   post "/api/v1/submit_feedback" do
@@ -83,14 +92,8 @@ defmodule FeedbackATron.HTTPIntake.Router do
             |> put_opt(:limit, params["limit"])
             |> put_opt(:include_templates, params["include_templates"])
 
-          case Research.research(request, opts) do
-            {:ok, result} ->
-              send_json(conn, 200, result)
-
-            {:error, reason} ->
-              Logger.error("HTTP research_feedback failed: #{inspect(reason)}")
-              send_json(conn, 502, %{error: "research_failed", detail: inspect(reason)})
-          end
+          {:ok, result} = Research.research(request, opts)
+          send_json(conn, 200, result)
 
         missing ->
           send_json(conn, 400, %{error: "missing_required_fields", fields: missing})
@@ -162,10 +165,12 @@ defmodule FeedbackATron.HTTPIntake.Router do
           template_data: params["template_data"]
         }
 
+        # Deliberately a fixed whitelist, and deliberately without :dry_run or
+        # :consent. A caller cannot put anything into these opts that the
+        # Submitter would read as a person's yes.
         opts = [
           platforms: Params.parse_platforms(params["platforms"]),
           labels: params["labels"] || [],
-          dry_run: params["dry_run"] || false,
           dedupe: not (params["skip_dedupe"] || false)
         ]
 
@@ -200,6 +205,14 @@ defmodule FeedbackATron.HTTPIntake.Router do
         {:ok, %{platform: platform, status: :dry_run, would_submit: issue}} ->
           %{platform: platform, status: "dry_run", title: issue.title}
 
+        {:ok, %{platform: platform, status: :drafted_needs_human_consent, would_submit: issue}} ->
+          %{
+            platform: platform,
+            status: "drafted_needs_human_consent",
+            title: issue.title,
+            detail: @needs_consent_detail
+          }
+
         {:error, %{platform: platform, error: error}} ->
           %{platform: platform, status: "error", error: inspect(error)}
 
@@ -220,7 +233,8 @@ defmodule FeedbackATron.HTTPIntake.Router do
     count = fn status -> Enum.count(results, &(Map.get(&1, :status) == status)) end
 
     "Submitted: #{count.("success")}, Errors: #{count.("error")}, " <>
-      "Skipped: #{count.("skipped")}, Dry run: #{count.("dry_run")}"
+      "Skipped: #{count.("skipped")}, Dry run: #{count.("dry_run")}, " <>
+      "Needs consent: #{count.("drafted_needs_human_consent")}"
   end
 
   defp send_json(conn, status, payload) do

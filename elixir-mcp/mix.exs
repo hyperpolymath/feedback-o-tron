@@ -4,7 +4,7 @@ defmodule FeedbackATron.MixProject do
   use Mix.Project
 
   @version "1.0.0"
-  @source_url "https://github.com/hyperpolymath/feedback-a-tron"
+  @source_url "https://github.com/hyperpolymath/feedback-o-tron"
 
   def project do
     [
@@ -18,7 +18,8 @@ defmodule FeedbackATron.MixProject do
 
       # Docs
       name: "FeedbackATron",
-      description: "Automated multi-platform feedback submission with network verification",
+      description:
+        "Feedback-o-Tron: multi-platform feedback and bug-report submission for people and AI agents",
       source_url: @source_url,
       docs: docs()
     ]
@@ -61,9 +62,6 @@ defmodule FeedbackATron.MixProject do
       # Fuzzy string matching for deduplication
       {:the_fuzz, "~> 0.6"},
 
-      # GenStage producer/consumer pipeline (migration observer)
-      {:gen_stage, "~> 1.2"},
-
       # For testing
       {:mox, "~> 1.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
@@ -74,10 +72,7 @@ defmodule FeedbackATron.MixProject do
   end
 
   defp escript do
-    [
-      main_module: FeedbackATron.CLI,
-      name: "feedback-a-tron"
-    ]
+    [main_module: FeedbackATron.CLI, name: "feedback-o-tron", app: nil]
   end
 
   defp releases do
@@ -90,8 +85,8 @@ defmodule FeedbackATron.MixProject do
 
   defp docs do
     [
-      main: "readme",
-      extras: ["README.md", "ARCHITECTURE.md"]
+      main: "FeedbackATron.CLI",
+      source_ref: "v#{@version}"
     ]
   end
 end

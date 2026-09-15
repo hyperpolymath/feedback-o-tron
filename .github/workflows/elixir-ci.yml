@@ -26,9 +26,14 @@ jobs:
       run:
         working-directory: elixir-mcp
     strategy:
+      fail-fast: false
       matrix:
         elixir: ['1.15', '1.16', '1.17']
         otp: ['26']
+        include:
+          # The version SP1b was developed and rehearsed against.
+          - elixir: '1.19'
+            otp: '27'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Detect relevant changes
@@ -84,6 +89,15 @@ jobs:
       - name: Run tests
         if: steps.detect.outputs.relevant == 'true'
         run: mix test --trace
+      - name: Build the escript
+        if: steps.detect.outputs.relevant == 'true'
+        run: mix escript.build
+      - name: Run the escript smoke tests
+        if: steps.detect.outputs.relevant == 'true'
+        run: mix test --only escript
+      - name: Prove nothing is sent without a person's typed yes
+        if: steps.detect.outputs.relevant == 'true'
+        run: scripts/consent_bypass_check.sh
   dialyzer:
     name: Dialyzer
     runs-on: ubuntu-latest

@@ -91,4 +91,34 @@ defmodule FeedbackATron.HTTPIntake.RouterTest do
       assert body["reason"] != ""
     end
   end
+
+  describe "the HTTP door cannot assert a person's consent" do
+    setup do
+      FeedbackATron.RateLimiter.reset(:github)
+      :ok
+    end
+
+    test ~s(a body carrying "consent": true does not send) do
+      conn =
+        json_post("/api/v1/submit_feedback", %{
+          title: "[boundary] http client-asserted consent",
+          body: "boundary body",
+          repo: "o/r",
+          consent: true,
+          dry_run: false,
+          skip_dedupe: true
+        })
+
+      assert conn.status == 200
+      payload = Jason.decode!(conn.resp_body)
+
+      assert [result] = payload["results"]
+      assert result["status"] == "drafted_needs_human_consent"
+      assert result["detail"] =~ "feedback-o-tron submit"
+
+      assert payload["summary"] =~ "Submitted: 0"
+      assert payload["summary"] =~ "Errors: 0"
+      assert payload["summary"] =~ "Needs consent: 1"
+    end
+  end
 end
