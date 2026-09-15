@@ -61,4 +61,4 @@ echo "Running diagnostics..."
 just doctor
 
 echo ""
-echo "Setup complete. Run 'just help-me' for common workflows."
+echo "Setup complete. Run 'just --list' to see the available recipes."

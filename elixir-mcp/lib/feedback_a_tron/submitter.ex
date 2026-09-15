@@ -38,6 +38,9 @@ defmodule FeedbackATron.Submitter do
   ## Options
   - `:platforms` - list of platforms to submit to (default: [:github])
   - `:dry_run` - if true, don't actually submit (default: false)
+  - `:consent` - `:human_confirmed` when, and only when, a person read the whole
+    payload at a terminal and typed y. Anything else (including its absence)
+    means the report is drafted and never sent. See `FeedbackATron.CLI`.
   - `:template` - template name for formatting
   - `:dedupe` - check for existing similar issues (default: true)
   - `:labels` - list of labels to apply
@@ -72,9 +75,10 @@ defmodule FeedbackATron.Submitter do
 
   @impl true
   def init(opts) do
+    # No credentials here. Resolving them at boot shelled out to `gh` before
+    # any request existed, let alone a consent; see the submit path below.
     state = %{
       submissions: %{},
-      credentials: Credentials.load(),
       rate_limits: %{},
       opts: opts
     }
@@ -93,6 +97,14 @@ defmodule FeedbackATron.Submitter do
         dry_run = Keyword.get(opts, :dry_run, false)
         dedupe = Keyword.get(opts, :dedupe, true)
 
+        # SP1b pre-ledger rule. Nothing leaves this machine unless a person saw
+        # the whole payload and typed y. Only CLI.submit/3 attaches :consent,
+        # and only after tty_confirm/0 returned true. Every other caller — the
+        # MCP door, the HTTP door, BatchReviewer — lands in the drafted clause
+        # by construction, because there is no way to assert consent from
+        # outside the CLI's interactive confirm.
+        consented = Keyword.get(opts, :consent) == :human_confirmed
+
         results =
           platforms
           |> Enum.map(fn platform ->
@@ -100,26 +112,48 @@ defmodule FeedbackATron.Submitter do
                  :ok <- maybe_dedupe(dedupe, platform, issue) do
               # A dry run is a preview: it still passes rate-limit and dedup
               # checks above, but must not require credentials.
-              if dry_run do
-                {:ok, %{platform: platform, status: :dry_run, would_submit: issue}}
-              else
-                with {:ok, cred} <- Credentials.get(state.credentials, platform) do
-                  result = Retry.with_backoff(fn -> do_submit(platform, issue, cred, opts) end)
+              cond do
+                dry_run ->
+                  {:ok, %{platform: platform, status: :dry_run, would_submit: issue}}
 
-                  # Record only real successes: never dry runs (which
-                  # short-circuit above), never errors. Recording feeds the
-                  # deduplicator so recurring themes are recognized as recurring.
-                  case result do
-                    {:ok, submission_result} ->
-                      RateLimiter.record(platform)
-                      Deduplicator.record(issue, platform, submission_result)
+                # Fail closed. A drafted report is a real, dedup-checked report
+                # that simply has not been sent, and never will be from here.
+                # It is deliberately NOT :dry_run: a caller that asked for a
+                # real send must not be told "dry run" and retry.
+                not consented ->
+                  {:ok,
+                   %{
+                     platform: platform,
+                     status: :drafted_needs_human_consent,
+                     would_submit: issue
+                   }}
 
-                    _ ->
-                      :ok
+                true ->
+                  # Resolve the credential here, on the only path a person has
+                  # consented to, and nowhere earlier. init/1 used to resolve it
+                  # at application boot, which (a) shelled out to `gh` before
+                  # there was a request to authenticate, (b) held the token in
+                  # long-lived GenServer state, readable by :sys.get_state and
+                  # by any crash dump, and (c) went stale the moment the person
+                  # re-authenticated. Synthesis.TemplateFetcher and
+                  # Synthesis.Research already resolve at the point of use.
+                  with {:ok, cred} <- Credentials.get(Credentials.load(), platform) do
+                    result = Retry.with_backoff(fn -> do_submit(platform, issue, cred, opts) end)
+
+                    # Record only real successes: never dry runs (which
+                    # short-circuit above), never errors. Recording feeds the
+                    # deduplicator so recurring themes are recognized as recurring.
+                    case result do
+                      {:ok, submission_result} ->
+                        RateLimiter.record(platform)
+                        Deduplicator.record(issue, platform, submission_result)
+
+                      _ ->
+                        :ok
+                    end
+
+                    result
                   end
-
-                  result
-                end
               end
             end
           end)

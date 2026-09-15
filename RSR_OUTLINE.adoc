@@ -101,7 +101,6 @@ The template Justfile provides:
 ----
 just                # Show all recipes
 just help <recipe>  # Detailed help
-just info           # Project info
 just combinations   # Show matrix options
 
 just build          # Build (debug)

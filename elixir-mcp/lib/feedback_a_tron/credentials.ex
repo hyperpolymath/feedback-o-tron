@@ -115,11 +115,17 @@ defmodule FeedbackATron.Credentials do
   end
 
   defp load_gh_cli_token do
+    load_gh_hosts_token() || load_gh_auth_token()
+  end
+
+  # gh writes oauth_token into hosts.yml only when no system keyring is
+  # available; on a desktop the token lives in the keyring and hosts.yml has
+  # no oauth_token line. `gh auth token` answers in both cases.
+  defp load_gh_hosts_token do
     config_path = Path.expand("~/.config/gh/hosts.yml")
 
     case File.read(config_path) do
       {:ok, content} ->
-        # Parse YAML to get oauth_token for github.com
         case YamlElixir.read_from_string(content) do
           {:ok, %{"github.com" => %{"oauth_token" => token}}} -> token
           _ -> nil
@@ -128,6 +134,25 @@ defmodule FeedbackATron.Credentials do
       {:error, _} ->
         nil
     end
+  end
+
+  defp load_gh_auth_token, do: gh_auth_token(&System.cmd/3)
+
+  @doc false
+  def gh_auth_token(cmd) do
+    case cmd.("gh", ["auth", "token"], stderr_to_stdout: true) do
+      {out, 0} ->
+        case String.trim(out) do
+          "" -> nil
+          token -> token
+        end
+
+      _ ->
+        nil
+    end
+  rescue
+    # System.cmd raises ErlangError :enoent when gh is not installed.
+    ErlangError -> nil
   end
 
   # GitLab: Check env, then glab CLI config

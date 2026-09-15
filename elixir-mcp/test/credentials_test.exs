@@ -95,4 +95,25 @@ defmodule FeedbackATron.CredentialsTest do
       assert {:error, :no_credentials} = Credentials.get(creds, :nonexistent)
     end
   end
+
+  describe "gh_auth_token/1" do
+    test "returns the trimmed token when gh exits 0" do
+      cmd = fn "gh", ["auth", "token"], _opts -> {"ghp_x\n", 0} end
+      assert Credentials.gh_auth_token(cmd) == "ghp_x"
+    end
+
+    test "returns nil when gh is not logged in" do
+      cmd = fn _, _, _ -> {"no oauth token\n", 1} end
+      assert Credentials.gh_auth_token(cmd) == nil
+    end
+
+    test "returns nil on an empty token" do
+      assert Credentials.gh_auth_token(fn _, _, _ -> {"\n", 0} end) == nil
+    end
+
+    test "returns nil when gh is not installed" do
+      cmd = fn _, _, _ -> raise ErlangError, original: :enoent end
+      assert Credentials.gh_auth_token(cmd) == nil
+    end
+  end
 end

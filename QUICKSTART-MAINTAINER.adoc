@@ -9,7 +9,7 @@ Packaging, deployment, and release management.
 
 * Git 2.40+
 * just (command runner)
-* Familiarity with the project (run `just tour` first)
+* Familiarity with the project (read README.adoc and run `just --list` first)
 
 == CI/CD
 

@@ -94,3 +94,7 @@ ai-cli-crash-capture/
 .cache/
 build/
 dist/
+
+# Built escripts (mix escript.build output)
+/elixir-mcp/feedback-o-tron
+/elixir-mcp/feedback-a-tron

@@ -5,6 +5,10 @@ defmodule FeedbackATron.MCP.Server do
   MCP server with stdio and optional TCP transports.
 
   TCP is disabled by default; enable with FEEDBACK_A_TRON_MCP_TCP=1.
+
+  The stdio transport reads `stdio_in` and writes `stdio_out` (both default to
+  `:stdio`); when the input reaches EOF the server calls `on_eof` (default:
+  stop the VM). Every log line goes to stderr (see `config/config.exs`).
   """
 
   use GenServer
@@ -12,7 +16,18 @@ defmodule FeedbackATron.MCP.Server do
 
   alias ElixirMcpServer.Protocol
 
-  defstruct [:name, :version, :tools, :resources, :capabilities, :stdio?, :tcp]
+  defstruct [
+    :name,
+    :version,
+    :tools,
+    :resources,
+    :capabilities,
+    :stdio?,
+    :stdio_in,
+    :stdio_out,
+    :on_eof,
+    :tcp
+  ]
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -35,6 +50,9 @@ defmodule FeedbackATron.MCP.Server do
         resources: %{}
       },
       stdio?: Keyword.get(opts, :stdio, true),
+      stdio_in: Keyword.get(opts, :stdio_in, :stdio),
+      stdio_out: Keyword.get(opts, :stdio_out, :stdio),
+      on_eof: Keyword.get(opts, :on_eof, &default_on_eof/0),
       tcp: tcp_config(opts)
     }
 
@@ -60,18 +78,24 @@ defmodule FeedbackATron.MCP.Server do
   end
 
   defp stdio_loop(state) do
-    case IO.read(:stdio, :line) do
+    case IO.read(state.stdio_in, :line) do
       :eof ->
-        :ok
+        Logger.info("MCP client closed stdin; stopping")
+        state.on_eof.()
 
       {:error, reason} ->
-        Logger.error("stdio read error: #{inspect(reason)}")
+        Logger.error("stdio read error: #{inspect(reason)}; stopping")
+        state.on_eof.()
 
       line ->
-        handle_message(String.trim(line), state, &IO.puts/1)
+        handle_message(String.trim(line), state, &IO.puts(state.stdio_out, &1))
         stdio_loop(state)
     end
   end
+
+  # A host that dies must never leave an orphan holding the HTTP port: when
+  # stdin closes, the whole VM stops (exit 0). Tests inject `on_eof:` instead.
+  defp default_on_eof, do: System.stop(0)
 
   defp tcp_config(opts) do
     env_enabled = System.get_env("FEEDBACK_A_TRON_MCP_TCP")

@@ -17,19 +17,22 @@ Get up and running in 60 seconds.
 git clone https://github.com/hyperpolymath/feedback-o-tron
 cd feedback-o-tron
 just doctor    # check toolchain
-just heal      # auto-install missing tools
+just install   # build feedback-o-tron into ~/.local/bin
 ----
 
 == First Run
 
 [source,bash]
 ----
-just tour      # guided project tour
-just help-me   # see common workflows
+feedback-o-tron --version
+
+# A dry run prints the whole payload and sends nothing
+feedback-o-tron submit --repo "test/repo" --title "Test" \
+  --body "Test" --platform github --dry-run
 ----
 
 == Get Help
 
-* `just help-me` — common workflows
+* `just --list` — every available recipe
 * `just doctor` — diagnose toolchain issues
 * https://github.com/hyperpolymath/feedback-o-tron/issues — report bugs
