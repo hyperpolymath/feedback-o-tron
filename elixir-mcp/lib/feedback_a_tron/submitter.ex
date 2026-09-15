@@ -75,9 +75,10 @@ defmodule FeedbackATron.Submitter do
 
   @impl true
   def init(opts) do
+    # No credentials here. Resolving them at boot shelled out to `gh` before
+    # any request existed, let alone a consent; see the submit path below.
     state = %{
       submissions: %{},
-      credentials: Credentials.load(),
       rate_limits: %{},
       opts: opts
     }
@@ -128,7 +129,15 @@ defmodule FeedbackATron.Submitter do
                    }}
 
                 true ->
-                  with {:ok, cred} <- Credentials.get(state.credentials, platform) do
+                  # Resolve the credential here, on the only path a person has
+                  # consented to, and nowhere earlier. init/1 used to resolve it
+                  # at application boot, which (a) shelled out to `gh` before
+                  # there was a request to authenticate, (b) held the token in
+                  # long-lived GenServer state, readable by :sys.get_state and
+                  # by any crash dump, and (c) went stale the moment the person
+                  # re-authenticated. Synthesis.TemplateFetcher and
+                  # Synthesis.Research already resolve at the point of use.
+                  with {:ok, cred} <- Credentials.get(Credentials.load(), platform) do
                     result = Retry.with_backoff(fn -> do_submit(platform, issue, cred, opts) end)
 
                     # Record only real successes: never dry runs (which

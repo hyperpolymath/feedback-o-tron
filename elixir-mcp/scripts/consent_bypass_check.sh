@@ -63,11 +63,17 @@ fakehome="$work/home"
 mkdir -p "$fakehome"
 
 # A syntactically valid token the engine will accept. This is what gives the
-# check its teeth: it is the credential a bypass would use. Remove it and a
-# regression that deleted the consent gate outright would stop at
-# {:error, :no_credentials}, make no `gh` call, and be reported as a PASS --
-# the check would pass for the wrong reason and prove nothing. The value is
-# fake and is never transmitted: the only `gh` on PATH refuses to run.
+# check its teeth: it is the credential a bypass would actually send with.
+# Measured against a mutant whose consent gate was defeated, the check records
+#
+#     gh auth token
+#     gh issue create --repo ... --title consent bypass check --body ...   (x3)
+#
+# naming the send and its payload. Without the token the same mutant stops at
+# {:error, :no_credentials} and never reaches `gh issue create`, so the check
+# would be resting on the incidental `gh auth token` probe rather than on the
+# send -- and would fall silent the day that probe is made conditional. The
+# value is fake and is never transmitted: the only `gh` on PATH refuses to run.
 #
 # It is assembled at runtime rather than written out as a literal. A
 # token-shaped string of this length in a tracked file is indistinguishable
