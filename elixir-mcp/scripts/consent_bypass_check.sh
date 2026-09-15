@@ -49,8 +49,24 @@ FAKE
 chmod +x "$work/bin/gh"
 export PATH="$work/bin:$PATH"
 
-# A syntactically valid token the engine will accept, so that if it stops, it
-# stops at the consent gate and not at a missing credential. This value is
+# A pristine HOME, so that what this script measures is the engine and not the
+# machine it runs on. `Credentials` reads ~/.config/gh/hosts.yml, so on a
+# developer box with a logged-in gh the file answers and the fake `gh` below is
+# never reached, while on a CI runner with no hosts.yml the same code shells
+# out. That made this check pass locally and fail in CI for a reason that had
+# nothing to do with consent. An acceptance test whose verdict depends on
+# whether the host happens to hold a credential file is not a test.
+#
+# Only the engine run is isolated: `mix escript.build` legitimately needs the
+# real HOME for ~/.hex and ~/.mix.
+fakehome="$work/home"
+mkdir -p "$fakehome"
+
+# A syntactically valid token the engine will accept. This is what gives the
+# check its teeth: it is the credential a bypass would use. Remove it and a
+# regression that deleted the consent gate outright would stop at
+# {:error, :no_credentials}, make no `gh` call, and be reported as a PASS --
+# the check would pass for the wrong reason and prove nothing. The value is
 # fake and is never transmitted: the only `gh` on PATH refuses to run.
 #
 # It is assembled at runtime rather than written out as a literal. A
@@ -73,7 +89,7 @@ JSON
 
 echo "==> driving the MCP door with no person present"
 out="$work/response.jsonl"
-./feedback-o-tron serve --no-http <"$req" >"$out" 2>"$work/stderr.log" || true
+env HOME="$fakehome" ./feedback-o-tron serve --no-http <"$req" >"$out" 2>"$work/stderr.log" || true
 
 calls="$(wc -l <"$ghlog" | tr -d ' ')"
 echo "==> gh invocations: $calls (must be 0)"
