@@ -62,9 +62,6 @@ defmodule FeedbackATron.MixProject do
       # Fuzzy string matching for deduplication
       {:the_fuzz, "~> 0.6"},
 
-      # GenStage producer/consumer pipeline (migration observer)
-      {:gen_stage, "~> 1.2"},
-
       # For testing
       {:mox, "~> 1.0", only: :test},
       {:bypass, "~> 2.1", only: :test},

@@ -60,8 +60,10 @@ Elixir 1.19 / OTP 27._
   question, not a build. This is the core and it stays the core.
 * A GenStage migration-observation pipeline (producer → review consumer →
   VeriSim writer) with a batch reviewer and report generator, built for the
-  ReScript migration. Real and tested, narrow in purpose, and the natural
-  seed for burst clustering at L5.
+  ReScript migration. RETIRED 2026-09-15 by owner ruling FOT-R-22: it was never
+  wired into the supervision tree, carried zero tests despite the claim above,
+  and the ReScript migration it was built for is moot under the bun-only
+  doctrine. Do not seed L5 burst clustering on it — it no longer exists.
 * The MCP server (`mcp/server.ex`, stdio by default, optional loopback TCP)
   exposing three tools: research, synthesize, submit.
 * The HTTP intake (`http_intake/router.ex`, 127.0.0.1:7722, off by default)
