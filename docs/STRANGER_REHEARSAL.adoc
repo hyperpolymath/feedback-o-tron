@@ -182,18 +182,18 @@ label by hand afterwards if it is wanted for filtering.
 
 === Step 7: repeat the credential step on the host
 
-Outside the container, in the desktop session with the keyring. Run from a
-checkout of the branch, in `elixir-mcp`, after `mix escript.build` -- that is
-where `./feedback-o-tron` comes from.
+Outside the container, in the desktop session. Run from a checkout of the
+branch, in `elixir-mcp`, after `mix escript.build` -- that is where
+`./feedback-o-tron` comes from.
 
 [source,bash]
 ----
 gh auth status
-grep -c 'oauth_token' ~/.config/gh/hosts.yml   # rc 1 and 0 is the failure shape
+grep -c 'oauth_token' ~/.config/gh/hosts.yml   # which store answers decides what this step tests
 gh auth token | wc -c                          # non-zero is the answer that matters
 ./feedback-o-tron submit \
   --repo "hyperpolymath/feedback-o-tron" \
-  --title "[stranger test] host keyring path" \
+  --title "[stranger test] host credential path" \
   --body "Credential-path check only." \
   --platform github \
   --dry-run
@@ -201,19 +201,34 @@ gh auth token | wc -c                          # non-zero is the answer that mat
 
 [IMPORTANT]
 ====
+*The second command decides which path this step actually tests.*
+`Credentials.load/0` reads `~/.config/gh/hosts.yml` first and falls back to
+`gh auth token` only if that finds nothing. A non-zero count therefore means
+the token is read at `load_gh_hosts_token` and the `gh auth token` fallback is
+*not exercised by this step at all*; the fallback is measurable only on a
+machine where that count is 0. Write down which number appeared before reading
+on. The step proves a different thing in each case, and letting one stand in
+for the other unannounced would be the exact defect this sheet exists to
+catch. On the machine where this sheet was written the count is 2, so this
+step tests the `hosts.yml` path there, not the fallback.
+
 *The dry run is not the credential probe.* `Submitter` returns the dry-run
 preview before `Credentials.get/2` is ever reached, and the comment there says
 a dry run "must not require credentials". `[DRY RUN] github: Would submit`
-therefore prints identically whether the token was found, whether the keyring
+therefore prints identically whether the token was found, whether the store
 was empty, or whether `gh` was never installed. What the dry run does prove is
 narrower and still worth having: the escript runs on the host, and
 `Credentials.load/0` completes without raising.
 
-*The third command is the probe.* `Credentials.gh_auth_token/1` shells out to
-exactly `gh auth token`, so a non-empty answer there is not a proxy -- it is
-the same command returning the same result the fallback will get. A count of
-0, or a non-zero exit, means the fallback finds nothing on this host, and that
-is the 2026-09-08 failure reproduced.
+*The third command is the probe -- of whichever store answered.*
+`Credentials.gh_auth_token/1` shells out to exactly `gh auth token`, so a
+non-empty answer there is not a proxy: it is the same command returning the
+same result the code would get. A count of 0 means `gh` itself holds no token
+on this host, and the cure is `gh auth login --insecure-storage`, not a change
+to Feedback-o-Tron. That is the opposite shape from the 2026-09-08 failure,
+where the token was present and findable and Feedback-o-Tron never asked for
+it. A 0 here is not a regression in this project, and reading it as one sends
+the reader hunting the wrong bug.
 
 *Consumption is a separate question.* Nothing the CLI exposes reports
 credential resolution -- there are four subcommands (`serve`, `submit`,

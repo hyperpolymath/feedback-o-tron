@@ -4835,26 +4835,37 @@ so nothing is being circumvented.
 * [ ] *Step 20.7: Repeat the credential step on the host, outside the
 container.*
 
-On the owner's desktop, with the keyring session that Step 20.3 quotes:
+On the owner's desktop, in the session that holds the `gh` credential:
 
 [source,bash]
 ----
 cd elixir-mcp
+grep -c 'oauth_token' ~/.config/gh/hosts.yml
 gh auth token | wc -c
 ./feedback-o-tron submit --repo "hyperpolymath/feedback-o-tron" \
-  --title "[stranger test] keyring path" --body "checking credential lookup" \
+  --title "[stranger test] host credential path" \
+  --body "checking credential lookup" \
   --platform github --dry-run
 ----
 
-Expected: `gh auth token` prints a non-empty token, and the payload prints and
-the dry run completes.
+Expected: the token count is non-empty, the payload prints, and the dry run
+completes.
+
+The first number decides which path this step tests. `Credentials.load/0`
+reads `~/.config/gh/hosts.yml` first and falls back to `gh auth token` only if
+that finds nothing, so a non-zero count means Task 8's fallback is *not*
+exercised here — the fallback is measurable only on a machine where the count
+is 0. Record which number appeared; the step proves a different thing in each
+case.
 
 The token count is the cell that carries the result. A dry run cannot fail
 with a missing-credential error: Submitter returns the dry-run preview before
 `Credentials.get/2` is reached, so `[DRY RUN] github: Would submit` appears
-whether or not a token was found. Task 8's fallback is literally
-`gh auth token`, so a count of 0 there is the failure this step exists to
-catch, and the container could not have shown it.
+whether or not a token was found. A count of 0 means `gh` itself holds no
+token on this host, and the cure is `gh auth login --insecure-storage`, not a
+change to this project — the opposite shape from 2026-09-08, where the token
+was present and Feedback-o-Tron never asked for it. Do not read a 0 here as a
+regression.
 
 * [ ] *Step 20.8: Write the verdict into the PR.*
 
