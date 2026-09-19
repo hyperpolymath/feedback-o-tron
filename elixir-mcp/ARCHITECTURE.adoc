@@ -757,7 +757,7 @@ and the shared libraries it links against. `mix release` bundles ERTS, so
 the runtime installs no Erlang. The only door the image opens is the HTTP
 intake on 7722. `stapeln.toml` describes the same build in layer form.
 
-`guix.scm` is the development environment: `guix shell -D -f guix.scm`, or
+`guix.scm` is the development environment: `guix shell -D -f build/guix.scm`, or
 `just guix-shell`. `mise.toml` is the primary route and pins the same
 Erlang and Elixir versions CI tests against.
 

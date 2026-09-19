@@ -58,7 +58,7 @@ ffi/zig/                    # C ABI bridge (future)
 
 ```
 README.adoc                 # Comprehensive usage guide
-CONTRIBUTING.adoc           # Contribution guidelines
+.github/CONTRIBUTING.md           # Contribution guidelines
 SECURITY.md                 # Security policy
 LICENSE.txt                 # MPL-2.0
 ```

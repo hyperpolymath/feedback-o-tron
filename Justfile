@@ -64,11 +64,11 @@ clean:
 
 # Build the Guix package defined in guix.scm
 guix-build:
-    guix build -f guix.scm
+    guix build -f build/guix.scm
 
 # Enter a development shell with the toolchain from guix.scm
 guix-shell:
-    guix shell -f guix.scm
+    guix shell -f build/guix.scm
 
 # Check the toolchain and report what is missing
 doctor:
