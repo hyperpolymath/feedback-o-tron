@@ -70,7 +70,7 @@ The following files in `.machine_readable/` contain structured project metadata:
   does not carry an `adapter/` directory of its own. Its front doors (MCP
   stdio/TCP, HTTP intake) are Elixir/OTP by architecture decision, unrelated
   to the Zig adapter pattern.
-- Naming lineage: the fuller "Hexadeca-Connector" (16-protocol-surface) pattern
+- Naming lineage: the fuller "UnifiedApiAdapter" (16-protocol-surface) pattern
   lives in `hyperpolymath/hypatia` and `hyperpolymath/proven-servers`, descended
   from a **retired** V-lang reference (`developer-ecosystem/v-ecosystem/v_api_interfaces`),
   replaced by Zig+Idris2+Rust-client per the estate-wide V-lang ban
