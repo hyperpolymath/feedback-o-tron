@@ -6,7 +6,7 @@ See README.adoc for overview.
 
 === Key Commands
 
-* `+just deps+` — fetch and compile dependencies
+* `+just deps+` — fetch dependencies (`mix deps.get`; it does not compile — use `+just build+`)
 * `+just build+` — build the project
 * `+just test+` — run tests
 * `+just doctor+` — diagnose issues

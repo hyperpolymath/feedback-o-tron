@@ -73,10 +73,22 @@ description = "Full development environment"
 layers = ["base", "toolchain", "build"]
 env = { LOG_LEVEL = "debug" }
 
+# The production target opens the doors it is deployed to serve. It used to
+# declare only LOG_LEVEL, which meant a deploy of this target started a
+# release with every door shut: nothing listening, and nothing saying so.
+#
+# The port is 7722, the engine's own intake port — deliberately not an
+# 8080-class port.
+#
+# The bind stays on loopback on purpose. The HTTP intake carries no
+# authentication of its own; it is a loopback wire for a cartridge or a
+# sidecar in the same network namespace. To reach it from outside the
+# container, put an authenticating proxy in front of it and forward to it —
+# do not publish this port, and do not widen the bind to make wiring easier.
 [targets.production]
-description = "Production deployment"
+description = "Production deployment: the intake door open on the loopback intake port"
 layers = ["runtime"]
-env = { LOG_LEVEL = "info" }
+env = { LOG_LEVEL = "info", FEEDBACK_O_TRON_HTTP = "1", FEEDBACK_O_TRON_HTTP_PORT = "7722", FEEDBACK_O_TRON_HTTP_BIND = "127.0.0.1" }
 
 [targets.test]
 description = "Test environment"

@@ -119,10 +119,10 @@ Once your AI finishes, you can:
 [source,bash]
 ----
 # File a bug (or just tell your AI to do it)
-./feedback-o-tron submit --repo "owner/repo" --title "Bug" --body "Details" --platform github
+feedback-o-tron submit --repo "owner/repo" --title "Bug" --body "Details" --platform github
 
 # Dry-run (safe test)
-./feedback-o-tron submit --repo "test" --title "Test" --body "Test" --dry-run
+feedback-o-tron submit --repo "test" --title "Test" --body "Test" --dry-run
 
 # Or with Claude Code MCP integration, just say:
 # "File a bug about the crash in maliit-keyboard on Fedora Bugzilla"
@@ -142,7 +142,7 @@ Tell your AI: "Remove feedback-o-tron from my system"
 |Install Elixir from your distribution first: `dnf install elixir`, `apt install elixir`, `brew install elixir`. See link:docs/AI_INSTALLATION_GUIDE.adoc[the installation guide] for every route.
 
 |"401 Unauthorized"
-|The token is expired or lacks scopes. For GitHub, `gh auth login` and let the CLI hold the token.
+|The token is expired or lacks scopes. For GitHub, `gh auth login` and let the CLI hold the token. If it still 401s, check for a stale token in the environment first: a `GITHUB_TOKEN` or `GH_TOKEN` exported in your shell wins over the gh CLI, so `gh auth login` can succeed while an old environment variable keeps being sent. `echo "$GITHUB_TOKEN"` to see it, `unset GITHUB_TOKEN` to stop sending it.
 
 |"duplicate detected"
 |The deduplicator found an existing report. Read it first; if it is genuinely different, change the title so it is.

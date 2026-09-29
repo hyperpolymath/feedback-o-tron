@@ -115,7 +115,7 @@ LICENSE.txt                 # MPL-2.0
 ### Testing
 
 - Unit tests: `mix test`
-- Integration: `./feedback-o-tron submit --dry-run ...`
+- Integration: `elixir-mcp/feedback-o-tron submit --dry-run ...`
 - Real submission: Use test repos, not production
 
 ### Bug Fixes
@@ -160,7 +160,7 @@ configures nothing.
 ### Standalone CLI
 
 ```bash
-./feedback-o-tron submit --repo "..." --title "..." --body "..." --platform bugzilla --component "..." --version "..."
+elixir-mcp/feedback-o-tron submit --repo "..." --title "..." --body "..." --platform bugzilla --component "..." --version "..."
 ```
 
 ### As Library
