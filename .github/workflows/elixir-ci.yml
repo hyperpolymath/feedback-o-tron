@@ -30,10 +30,14 @@ jobs:
         working-directory: elixir-mcp
     strategy:
       fail-fast: false
-      # The OTP floor is 27 (issue #97): cowlib 2.20 does not compile on OTP
-      # 26, and the toolchain this repo pins (mise.toml: erlang 27.0 /
+      # The OTP floor is 27 (issue #97), and it is measured, not assumed: on
+      # 2026-09-19 the OTP 26 cells (Elixir 1.15/1.16/1.17) all failed with
+      # `function parse/1 undefined` while this same commit's OTP 27 cell
+      # passed — cowlib 2.20, which cowboy requires, does not build on OTP
+      # 26. The toolchain this repo pins (mise.toml: erlang 27.0 /
       # elixir 1.19.5-otp-27) is OTP 27. Every Elixir version named here is a
-      # measured cell, so the documented floor is the floor that builds.
+      # cell that has actually been run, so the documented floor is the floor
+      # that builds.
       matrix:
         elixir: ['1.17', '1.18', '1.19']
         otp: ['27']

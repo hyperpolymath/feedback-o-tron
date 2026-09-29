@@ -19,9 +19,13 @@ mix escript.build          # produces ./feedback-o-tron
 
 Requires Elixir 1.17 or newer on OTP 27 or newer. CI tests 1.17, 1.18 and
 1.19 on OTP 27, and 1.19 on OTP 27 is what this engine is developed against.
-The floor was raised from OTP 26 in issue #97: `cowlib` 2.20, which `cowboy`
-requires, does not compile on OTP 26, so the old floor was a promise the
-build could not keep.
+The floor was raised from OTP 26 in issue #97, and the reason is measured
+rather than argued: on 2026-09-19 every OTP 26 cell in CI (Elixir 1.15, 1.16
+and 1.17) failed to compile a dependency with `function parse/1 undefined`,
+while the same commit's OTP 27 cell passed cleanly. `cowlib` 2.20, which
+`cowboy` requires, is what does not build there. The old floor was a promise
+the build could not keep, and on OTP 27 the identical commit builds, formats
+and dialyses green.
 
 == Run
 
