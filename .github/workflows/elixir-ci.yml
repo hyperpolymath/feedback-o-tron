@@ -12,6 +12,9 @@ on:
   # non-required test matrix is gated the same way so it doesn't run on every PR.
   pull_request:
     branches: [main]
+  # Manual runs: `gh workflow run elixir-ci.yml --ref <branch>`. Without this
+  # the only way to measure a branch is to open a PR and wait for the event.
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
