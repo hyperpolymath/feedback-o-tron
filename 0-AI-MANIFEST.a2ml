@@ -115,7 +115,7 @@ LICENSE.txt                 # MPL-2.0
 ### Testing
 
 - Unit tests: `mix test`
-- Integration: `./feedback-o-tron submit --dry-run ...`
+- Integration: `elixir-mcp/feedback-o-tron submit --dry-run ...`
 - Real submission: Use test repos, not production
 
 ### Bug Fixes
@@ -160,7 +160,7 @@ configures nothing.
 ### Standalone CLI
 
 ```bash
-./feedback-o-tron submit --repo "..." --title "..." --body "..." --platform bugzilla --component "..." --version "..."
+elixir-mcp/feedback-o-tron submit --repo "..." --title "..." --body "..." --platform bugzilla --component "..." --version "..."
 ```
 
 ### As Library
@@ -194,8 +194,8 @@ Both submissions validated end-to-end workflow including:
 ## Dependencies
 
 **Runtime:**
-- Elixir 1.15+
-- Erlang/OTP 26+
+- Elixir 1.17+
+- Erlang/OTP 27+
 - Jason (JSON encoding)
 - Req (HTTP client)
 - YamlElixir (CLI config parsing)

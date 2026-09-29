@@ -15,8 +15,12 @@ toolbox enter feedback-o-tron-dev
 
 # Verify setup
 
-just check   # or: cargo check / mix compile / etc.
-just test    # Run test suite
+just build   # compile the engine with warnings as errors
+just lint    # build, then check formatting
+just test    # run the test suite
+
+# `just check` does not exist, and neither does any cargo target: this is an
+# Elixir project. `just --list` is the authority on what can be run.
 
 ### Repository Structure
 

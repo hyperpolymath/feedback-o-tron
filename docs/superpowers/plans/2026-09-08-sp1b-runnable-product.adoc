@@ -4832,41 +4832,62 @@ NOTE: the repository has issue forms at `.github/ISSUE_TEMPLATE/bug.yml` and
 `POST /issues` bypasses them. `config.yml` has `blank_issues_enabled: true`,
 so nothing is being circumvented.
 
-* [ ] *Step 20.7: Repeat the credential step on the host, outside the
+* [ ] *Step 20.7: Exercise the credential path on the host, outside the
 container.*
+
+[NOTE]
+====
+*Amended 2026-09-29, per issue #95 F5.* The step as first written ended in a
+`--dry-run` submit, and a dry run cannot fail with a missing-credential
+error: `Submitter` returns the preview before `Credentials.get/2` is ever
+reached. So the step passed whether or not the `gh auth token` fallback
+worked — on a host with no `oauth_token` in `hosts.yml`, a broken fallback
+produced exactly the same green output as a working one. A check that cannot
+tell those two states apart does not test the thing it is named after. The
+submission is replaced below with a direct read of the credential path, which
+reaches `gh_auth_token/1` and files nothing.
+====
 
 On the owner's desktop, in the session that holds the `gh` credential:
 
 [source,bash]
 ----
 cd elixir-mcp
-grep -c 'oauth_token' ~/.config/gh/hosts.yml
-gh auth token | wc -c
-./feedback-o-tron submit --repo "hyperpolymath/feedback-o-tron" \
-  --title "[stranger test] host credential path" \
-  --body "checking credential lookup" \
-  --platform github --dry-run
+grep -c 'oauth_token' ~/.config/gh/hosts.yml   # the number that decides what this step tests
+gh auth token | wc -c                          # non-empty means gh itself holds a token
 ----
 
-Expected: the token count is non-empty, the payload prints, and the dry run
-completes.
+Then ask the engine for the credential the send path would use:
 
-The first number decides which path this step tests. `Credentials.load/0`
-reads `~/.config/gh/hosts.yml` first and falls back to `gh auth token` only if
-that finds nothing, so a non-zero count means Task 8's fallback is *not*
-exercised here — the fallback is measurable only on a machine where the count
-is 0. Record which number appeared; the step proves a different thing in each
-case.
+[source,bash]
+----
+cd elixir-mcp
+mix run -e 'IO.inspect(FeedbackATron.Credentials.get(FeedbackATron.Credentials.load(), :github))'
+----
 
-The token count is the cell that carries the result. A dry run cannot fail
-with a missing-credential error: Submitter returns the dry-run preview before
-`Credentials.get/2` is reached, so `[DRY RUN] github: Would submit` appears
-whether or not a token was found. A count of 0 means `gh` itself holds no
-token on this host, and the cure is `gh auth login --insecure-storage`, not a
-change to this project — the opposite shape from 2026-09-08, where the token
-was present and Feedback-o-Tron never asked for it. Do not read a 0 here as a
+Expected: `{:ok, %{source: _, token: "ghp_..."}}` — and never
+`{:error, :no_credentials}`. Nothing is filed: this reads the credential and
+stops.
+
+*Run it in both states, or it proves half of what it claims.*
+
+* With `oauth_token` present in `hosts.yml` (the count above is non-zero),
+  the `hosts.yml` branch answers and the `gh auth token` fallback is *not*
+  exercised.
+* To exercise the fallback, move the file aside for the length of the command
+  — `mv ~/.config/gh/hosts.yml /tmp/hosts.yml.bak`, run it, then move it
+  back. With no `hosts.yml` to read, `Credentials.load/0` must fall through
+  to `gh_auth_token/1`, and the result must still be `{:ok, _}`.
+
+Record which state produced which result. The fallback is the half that was
+never measured, and it is the half that matters for a person whose `gh` keeps
+its token somewhere other than `hosts.yml` (a keyring, for instance).
+
+A count of 0 from `gh auth token | wc -c` means `gh` itself holds no token on
+this host; the cure is `gh auth login --insecure-storage`, not a change to
+this project — the opposite shape from 2026-09-08, where the token was
+present and Feedback-o-Tron never asked for it. Do not read a 0 here as a
 regression.
-
 * [ ] *Step 20.8: Write the verdict into the PR.*
 
 Not a commit — a comment on the SP1b PR, with:

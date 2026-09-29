@@ -23,7 +23,7 @@ defmodule FeedbackATron.Submitter do
   use GenServer
   require Logger
 
-  alias FeedbackATron.{Channel, Credentials, Deduplicator, AuditLog, RateLimiter, Retry}
+  alias FeedbackATron.{Channel, Consent, Credentials, Deduplicator, AuditLog, RateLimiter, Retry}
   alias FeedbackATron.Synthesis.{FormRenderer, FormValidator, TemplateFetcher}
 
   # Client API
@@ -38,9 +38,14 @@ defmodule FeedbackATron.Submitter do
   ## Options
   - `:platforms` - list of platforms to submit to (default: [:github])
   - `:dry_run` - if true, don't actually submit (default: false)
-  - `:consent` - `:human_confirmed` when, and only when, a person read the whole
-    payload at a terminal and typed y. Anything else (including its absence)
-    means the report is drafted and never sent. See `FeedbackATron.CLI`.
+  - `:consent` - a one-time consent capability from `FeedbackATron.Consent`,
+    minted when, and only when, a person read the whole payload at a terminal
+    and typed y. It is bound to that exact report and to the destinations it
+    was confirmed for, so it cannot be replayed, guessed or spent on
+    something else. Anything else (including its absence, and including the
+    bare atom `:human_confirmed`, which any caller could once construct)
+    means the report is drafted and never sent. See `FeedbackATron.Consent`
+    and `FeedbackATron.CLI`.
   - `:template` - template name for formatting
   - `:dedupe` - check for existing similar issues (default: true)
   - `:labels` - list of labels to apply
@@ -88,6 +93,25 @@ defmodule FeedbackATron.Submitter do
 
   @impl true
   def handle_call({:submit, issue, opts}, _from, state) do
+    # SP1b pre-ledger rule, settled before anything else touches the payload.
+    #
+    # Nothing leaves this machine unless a person saw the whole payload and
+    # typed y. That yes is not a claim the caller makes — it is a capability
+    # minted by FeedbackATron.Consent at the terminal, bound to this exact
+    # report and to the destinations it was confirmed for (see that module).
+    #
+    # Consent is checked against the report *as handed to us*, before
+    # maybe_apply_template/1 can rewrite the body: the person confirmed what
+    # they were shown, and the capability covers that, not a re-rendered
+    # version of it. Checking here also means the capability is spent even
+    # when the template step subsequently fails, so a failed send can never
+    # leave a live capability behind.
+    #
+    # Every other caller — the MCP door, the HTTP door, and any batch — lands
+    # in the drafted clause by construction: there is no value they can put
+    # in `opts` that `Consent.redeem/3` will accept.
+    consented = consents_to?(issue, opts)
+
     case maybe_apply_template(issue) do
       {:error, reason} ->
         {:reply, {:error, reason}, state}
@@ -96,14 +120,6 @@ defmodule FeedbackATron.Submitter do
         platforms = Keyword.get(opts, :platforms, [:github])
         dry_run = Keyword.get(opts, :dry_run, false)
         dedupe = Keyword.get(opts, :dedupe, true)
-
-        # SP1b pre-ledger rule. Nothing leaves this machine unless a person saw
-        # the whole payload and typed y. Only CLI.submit/3 attaches :consent,
-        # and only after tty_confirm/0 returned true. Every other caller — the
-        # MCP door and the HTTP door — lands in the drafted clause
-        # by construction, because there is no way to assert consent from
-        # outside the CLI's interactive confirm.
-        consented = Keyword.get(opts, :consent) == :human_confirmed
 
         results =
           platforms
@@ -213,6 +229,15 @@ defmodule FeedbackATron.Submitter do
   end
 
   # Helpers
+
+  # Consent is proven, never asserted. `Consent.redeem/3` is the only way past
+  # this line, and it answers :ok only for a capability this process cannot
+  # have minted itself, that has not been spent, that has not expired, and
+  # that was bound to this exact payload. Everything else drafts — including
+  # the bare `:human_confirmed` atom, which used to be enough.
+  defp consents_to?(issue, opts) do
+    Consent.redeem(Keyword.get(opts, :consent), issue, opts) == :ok
+  end
 
   # Template-shaped submissions: when the caller supplies template_data,
   # fetch the repo's issue-form schema, validate the answers against it

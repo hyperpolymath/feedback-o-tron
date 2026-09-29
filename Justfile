@@ -49,6 +49,12 @@ smoke: escript
     cd {{engine}} && mix test --only escript
     cd {{engine}} && scripts/consent_bypass_check.sh
 
+# As `smoke`, but also prove the consent check itself bites: build a mutant
+# whose consent gate is defeated and require the check to fail against it.
+# Slower (two escript builds); CI runs it on every push.
+consent: escript
+    cd {{engine}} && scripts/consent_bypass_check.sh --self-test
+
 # Run the engine in the foreground; Ctrl-D on stdin stops it
 serve: escript
     {{engine}}/feedback-o-tron serve
@@ -96,8 +102,8 @@ doctor:
             warn=$((warn + 1))
         fi
     }
-    probe need elixir "1.15 or newer"
-    probe need erl    "OTP 26 or newer"
+    probe need elixir "1.17 or newer"
+    probe need erl    "OTP 27 or newer"
     probe need git    "2.40 or newer"
     probe need gh     "GitHub CLI, required to submit issues"
     probe want podman "only for the container image"

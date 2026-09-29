@@ -5,6 +5,8 @@ defmodule FeedbackATron.Application do
   OTP Application for FeedbackATron.
 
   Supervises:
+  - Consent: Mints and spends the one-time consent capabilities the send
+    path requires (see `FeedbackATron.Consent`)
   - Submitter: Multi-platform issue submission
   - Deduplicator: Prevents duplicate submissions
   - AuditLog: Records all operations
@@ -32,6 +34,7 @@ defmodule FeedbackATron.Application do
 
   defp core_children do
     [
+      FeedbackATron.Consent,
       FeedbackATron.RateLimiter,
       FeedbackATron.Submitter,
       FeedbackATron.Deduplicator,

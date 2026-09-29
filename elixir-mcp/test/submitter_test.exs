@@ -12,6 +12,11 @@ defmodule FeedbackATron.SubmitterTest do
 
   setup do
     # Ensure core services are running.
+    case Process.whereis(FeedbackATron.Consent) do
+      nil -> FeedbackATron.Consent.start_link([])
+      _pid -> :ok
+    end
+
     case Process.whereis(FeedbackATron.Submitter) do
       nil -> FeedbackATron.Submitter.start_link([])
       _pid -> :ok
@@ -160,8 +165,10 @@ defmodule FeedbackATron.SubmitterTest do
   end
 
   # SP1b pre-ledger rule: nothing leaves this machine unless a person saw the
-  # whole payload and typed y. Only CLI.submit/3 attaches :consent, and only
-  # after the person confirmed; every other caller must land here.
+  # whole payload and typed y. Consent is a capability minted by
+  # FeedbackATron.Consent at the terminal, not a claim a caller can make, so
+  # every caller without one — including one that invents the value that used
+  # to work — lands in the drafted clause.
   describe "consent gate" do
     test "no :consent with dry_run: false is drafted, never sent" do
       issue = %{title: "Consent gate: unconsented submit", body: "body", repo: "owner/repo"}
@@ -203,6 +210,110 @@ defmodule FeedbackATron.SubmitterTest do
         FeedbackATron.Submitter.submit(issue, platforms: [:github], dry_run: true)
 
       assert {:ok, %{platform: :github, status: :dry_run}} = result
+    end
+  end
+
+  # The forgeability tests. Every one of these fails against the tree that
+  # read `Keyword.get(opts, :consent) == :human_confirmed`: there, naming the
+  # atom was enough to reach the credentialed branch.
+  #
+  # How "reached the credentialed branch" is measured without touching the
+  # network: the destination is a platform no credential can ever resolve, so
+  # the send path dies at Credentials.get/2 and reports :no_credentials. That
+  # is a different outcome from drafting, and it is the only one that proves
+  # the gate opened. Drafting is the outcome every forgery must produce.
+  describe "consent cannot be forged" do
+    # A platform with no channel, no credential and no network: if the gate
+    # opens, the attempt gets exactly this far and no further.
+    @platform :no_such_platform
+
+    test "the bare :human_confirmed atom is no longer consent" do
+      issue = %{title: "Forged: the old atom", body: "body", repo: "owner/repo"}
+
+      {:ok, _id, [result]} =
+        FeedbackATron.Submitter.submit(issue,
+          platforms: [@platform],
+          consent: :human_confirmed
+        )
+
+      assert {:ok, %{status: :drafted_needs_human_consent}} = result
+    end
+
+    test "a fabricated token is not consent" do
+      issue = %{title: "Forged: invented token", body: "body", repo: "owner/repo"}
+
+      {:ok, _id, [result]} =
+        FeedbackATron.Submitter.submit(issue,
+          platforms: [@platform],
+          consent: Base.url_encode64("not-minted-by-anyone", padding: false)
+        )
+
+      assert {:ok, %{status: :drafted_needs_human_consent}} = result
+    end
+
+    test "a real capability minted for a different payload is not consent for this one" do
+      shown = %{title: "Forged: payload swap", body: "what the person saw", repo: "owner/repo"}
+      {:ok, token} = FeedbackATron.Consent.issue(shown, platforms: [@platform])
+
+      swapped = %{shown | body: "what actually gets sent"}
+
+      {:ok, _id, [result]} =
+        FeedbackATron.Submitter.submit(swapped, platforms: [@platform], consent: token)
+
+      assert {:ok, %{status: :drafted_needs_human_consent}} = result
+    end
+
+    test "a real capability minted for other destinations is not consent for these" do
+      issue = %{title: "Forged: destination swap", body: "body", repo: "owner/repo"}
+      {:ok, token} = FeedbackATron.Consent.issue(issue, platforms: [:github])
+
+      {:ok, _id, [result]} =
+        FeedbackATron.Submitter.submit(issue, platforms: [:gitlab], consent: token)
+
+      assert {:ok, %{status: :drafted_needs_human_consent}} = result
+    end
+  end
+
+  describe "consent that was really given" do
+    @platform :no_such_platform
+
+    test "a capability minted at the terminal opens the send path once" do
+      issue = %{title: "Consented send", body: "body", repo: "owner/repo"}
+      opts = [platforms: [@platform]]
+
+      {:ok, token} = FeedbackATron.Consent.issue(issue, opts)
+
+      {:ok, _id, [result]} =
+        FeedbackATron.Submitter.submit(issue, Keyword.put(opts, :consent, token))
+
+      # Not drafted: the gate opened and the attempt reached the credentials.
+      assert {:error, :no_credentials} = result
+
+      # ...and the capability is spent, so the same yes cannot send twice.
+      refute FeedbackATron.Consent.held_for?(issue, opts)
+
+      {:ok, _id, [second]} =
+        FeedbackATron.Submitter.submit(issue, Keyword.put(opts, :consent, token))
+
+      assert {:ok, %{status: :drafted_needs_human_consent}} = second
+    end
+
+    test "one capability sends one report: the rest of a batch still drafts" do
+      [first, second] = [
+        %{title: "Batch: first", body: "b1", repo: "owner/repo"},
+        %{title: "Batch: second", body: "b2", repo: "owner/repo"}
+      ]
+
+      opts = [platforms: [@platform]]
+      {:ok, token} = FeedbackATron.Consent.issue(first, opts)
+
+      {:ok, results} =
+        FeedbackATron.Submitter.submit_batch([first, second], Keyword.put(opts, :consent, token))
+
+      [{_id1, [first_result]}, {_id2, [second_result]}] = results
+
+      assert {:error, :no_credentials} = first_result
+      assert {:ok, %{status: :drafted_needs_human_consent}} = second_result
     end
   end
 end

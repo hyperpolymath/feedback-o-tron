@@ -264,11 +264,14 @@ when that would be useful feedback*.
 |Any path under `/root` or `/home`
 |Leaks a username, and often a directory layout with it.
 
-|Anything shaped like `ghp_…` or `gho_…`
-|A GitHub credential. A token in a payload is an incident, not a defect.
+|Anything shaped like `ghp_…`, `gho_…` or `github_pat_…`
+|A GitHub credential: `ghp_` classic, `gho_` OAuth, `github_pat_` fine-grained. A token in a payload is an incident, not a defect. The fine-grained prefix is the newest of the three and the one a rehearser is least likely to recognise, so it is named here rather than left to be inferred.
 
 |An IPv4 or IPv6 literal
 |Network identity, whether or not it is routable.
+
+|A MAC address (`xx:xx:xx:xx:xx:xx`, `xx-xx-xx-xx-xx-xx`, or the dotted `xxxx.xxxx.xxxx` form)
+|Network identity at the link layer, and a stable hardware fingerprint that survives reinstalling the OS. The prose above names it explicitly -- "a MAC address" -- and for a while the table beneath it did not, so a rehearser who followed the table as instructed would have passed a payload the rule forbids. The row exists to close that gap.
 
 |An OS build string more specific than the distribution name
 |"Fedora 42" is fine. A kernel build, a minor point release or an image

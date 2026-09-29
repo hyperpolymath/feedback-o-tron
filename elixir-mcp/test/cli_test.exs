@@ -9,6 +9,7 @@ defmodule FeedbackATron.CLITest do
 
   setup do
     for mod <- [
+          FeedbackATron.Consent,
           FeedbackATron.RateLimiter,
           FeedbackATron.Submitter,
           FeedbackATron.Deduplicator,
@@ -211,7 +212,10 @@ defmodule FeedbackATron.CLITest do
     # The person's typed y is the ONLY thing that may put :consent into the
     # opts that reach Submitter.submit/2. Exercised through the in-suite seam:
     # an assistant may never type that y itself.
-    test "a yes attaches consent: :human_confirmed to the opts that reach the submitter" do
+    #
+    # What it attaches is a capability, not an atom: any caller could write
+    # `:human_confirmed`, and a gate made of forgeable data is not a gate.
+    test "a yes attaches a consent capability, not an atom any caller could write" do
       parent = self()
 
       submit = fn _issue, opts ->
@@ -226,7 +230,44 @@ defmodule FeedbackATron.CLITest do
       assert out =~ "✓ github: https://github.com/o/r/issues/1"
 
       assert_received {:seam_opts, opts}
-      assert opts[:consent] == :human_confirmed
+      capability = opts[:consent]
+
+      assert is_binary(capability)
+      refute capability == ":human_confirmed"
+      refute capability == "human_confirmed"
+
+      # It is a real capability, minted for exactly this report: it redeems
+      # once, and it does not redeem against anything else. Rebuilding the
+      # report from the same argv is the check — the capability must fit the
+      # payload the person was shown, byte for byte.
+      {:submit, issue, issue_opts} = CLI.parse_args(@args)
+
+      assert :ok = FeedbackATron.Consent.redeem(capability, issue, issue_opts)
+      replay = FeedbackATron.Consent.redeem(capability, issue, issue_opts)
+      assert replay == {:error, :unknown_capability}
+    end
+
+    test "a yes with the consent service down sends nothing and exits non-zero" do
+      # The service being unreachable must never read as consent. Its
+      # registered name is taken away rather than its process stopped, so the
+      # application supervisor has nothing to restart underneath the test.
+      pid = Process.whereis(FeedbackATron.Consent)
+      Process.unregister(FeedbackATron.Consent)
+
+      on_exit(fn ->
+        case Process.whereis(FeedbackATron.Consent) do
+          nil -> Process.register(pid, FeedbackATron.Consent)
+          _registered -> :ok
+        end
+      end)
+
+      submit = fn _issue, _opts -> flunk("nothing may be sent without consent") end
+
+      {result, out} =
+        with_io(fn -> CLI.run(@args, confirm: fn -> true end, submit: submit) end)
+
+      assert result == {:halt, 4}
+      assert out =~ "consent service is not running"
     end
 
     test "a no reaches the submitter seam not at all" do
