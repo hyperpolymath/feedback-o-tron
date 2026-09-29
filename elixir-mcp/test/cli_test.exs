@@ -252,22 +252,39 @@ defmodule FeedbackATron.CLITest do
       # registered name is taken away rather than its process stopped, so the
       # application supervisor has nothing to restart underneath the test.
       pid = Process.whereis(FeedbackATron.Consent)
+
+      assert is_pid(pid), "the consent service must be running for this to mean anything"
+
       Process.unregister(FeedbackATron.Consent)
 
       on_exit(fn ->
-        case Process.whereis(FeedbackATron.Consent) do
-          nil -> Process.register(pid, FeedbackATron.Consent)
-          _registered -> :ok
+        # Best effort, and never fatal: a teardown that raises reports itself
+        # against whichever test happens to be running next, which is how one
+        # broken test hides behind an innocent one.
+        try do
+          if is_nil(Process.whereis(FeedbackATron.Consent)) and Process.alive?(pid) do
+            Process.register(pid, FeedbackATron.Consent)
+          end
+        rescue
+          _ -> :ok
         end
       end)
 
       submit = fn _issue, _opts -> flunk("nothing may be sent without consent") end
 
-      {result, out} =
-        with_io(fn -> CLI.run(@args, confirm: fn -> true end, submit: submit) end)
+      # The refusal is on stderr: stdout is the MCP wire when this binary
+      # runs under a host, so nothing about a failure belongs on it.
+      {result, err} =
+        with_io(:stderr, fn -> CLI.run(@args, confirm: fn -> true end, submit: submit) end)
 
-      assert result == {:halt, 4}
-      assert out =~ "consent service is not running"
+      # Both values are named in the messages because which one is wrong is
+      # the whole diagnosis: a wrong exit code means the refusal branch was
+      # not taken at all, and an empty stderr means it was taken but silent.
+      assert result == {:halt, 4}, "must halt non-zero, got #{inspect(result)}"
+
+      assert err =~ "consent service is not running", "stderr was: #{inspect(err)}"
+
+      assert err =~ "Nothing was sent.", "stderr was: #{inspect(err)}"
     end
 
     test "a no reaches the submitter seam not at all" do
