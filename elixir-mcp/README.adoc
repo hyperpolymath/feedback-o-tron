@@ -17,9 +17,11 @@ mix escript.build          # produces ./feedback-o-tron
 ./feedback-o-tron --version
 ----
 
-Requires Elixir 1.15 or newer on OTP 26 or newer. CI tests 1.15, 1.16 and
-1.17 on OTP 26, plus 1.19 on OTP 27, which is what this engine is developed
-against.
+Requires Elixir 1.17 or newer on OTP 27 or newer. CI tests 1.17, 1.18 and
+1.19 on OTP 27, and 1.19 on OTP 27 is what this engine is developed against.
+The floor was raised from OTP 26 in issue #97: `cowlib` 2.20, which `cowboy`
+requires, does not compile on OTP 26, so the old floor was a promise the
+build could not keep.
 
 == Run
 

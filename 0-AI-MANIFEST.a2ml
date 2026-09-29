@@ -194,8 +194,8 @@ Both submissions validated end-to-end workflow including:
 ## Dependencies
 
 **Runtime:**
-- Elixir 1.15+
-- Erlang/OTP 26+
+- Elixir 1.17+
+- Erlang/OTP 27+
 - Jason (JSON encoding)
 - Req (HTTP client)
 - YamlElixir (CLI config parsing)

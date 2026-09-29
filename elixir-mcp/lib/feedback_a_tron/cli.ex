@@ -192,6 +192,8 @@ defmodule FeedbackATron.CLI do
 
   # OTP 26+ exports :prim_tty.isatty/1 (it answers false for a pipe and for
   # a closed stdin); :io.columns/0 is the older proxy for the same question.
+  # The floor is OTP 27 (issue #97), so :prim_tty is always present; the
+  # fallback is kept for anyone building against an older OTP by hand.
   defp stdin_tty? do
     if Code.ensure_loaded?(:prim_tty) and function_exported?(:prim_tty, :isatty, 1) do
       :prim_tty.isatty(:stdin) == true
