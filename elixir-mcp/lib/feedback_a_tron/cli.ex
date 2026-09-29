@@ -30,8 +30,23 @@ defmodule FeedbackATron.CLI do
         end
 
         Application.put_env(:feedback_a_tron, :doors, doors)
-        {:ok, _} = Application.ensure_all_started(:feedback_a_tron)
-        :running
+
+        # A door that cannot open is a startup failure, reported and fatal.
+        # It used to be a crash on a failed match (an opaque CaseClauseError),
+        # and before that a silent drop: `serve --no-stdio` with the intake
+        # port taken would sleep forever with no door open at all.
+        case Application.ensure_all_started(:feedback_a_tron) do
+          {:ok, _started} ->
+            :running
+
+          {:error, {app, reason}} ->
+            IO.puts(
+              :stderr,
+              "feedback-o-tron: #{app} did not start: #{describe_start_failure(reason)}"
+            )
+
+            {:halt, 1}
+        end
 
       {:submit, issue, submit_opts} ->
         submit(issue, submit_opts, opts)
@@ -222,6 +237,28 @@ defmodule FeedbackATron.CLI do
 
   defp exit_code(results) do
     if Enum.any?(results, &match?({:error, _}, &1)), do: 1, else: 0
+  end
+
+  # Startup failures are supervision-tree terms; say what they mean when we
+  # know what they mean, and never lose the term itself.
+  defp describe_start_failure(reason) do
+    text = inspect(reason)
+
+    hint =
+      cond do
+        String.contains?(text, "eaddrinuse") ->
+          " — the HTTP intake port is already in use. Free it, or choose " <>
+            "another with `serve --http-port N`."
+
+        String.contains?(text, "eacces") ->
+          " — the HTTP intake port is not permitted to this user " <>
+            "(ports below 1024 usually need root)."
+
+        true ->
+          ""
+      end
+
+    text <> hint
   end
 
   defp parse_submit_args(args) do

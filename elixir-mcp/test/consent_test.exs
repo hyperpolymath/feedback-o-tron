@@ -53,15 +53,15 @@ defmodule FeedbackATron.ConsentTest do
     test "a capability is bound to the destinations it was confirmed for" do
       {:ok, token} = Consent.issue(@issue, @opts)
 
-      assert {:error, :payload_mismatch} =
-               Consent.redeem(token, @issue, platforms: [:github, :gitlab], labels: ["bug"])
+      swapped = Consent.redeem(token, @issue, platforms: [:github, :gitlab], labels: ["bug"])
+      assert swapped == {:error, :payload_mismatch}
     end
 
     test "a capability is bound to the labels it was confirmed for" do
       {:ok, token} = Consent.issue(@issue, @opts)
 
-      assert {:error, :payload_mismatch} =
-               Consent.redeem(token, @issue, platforms: [:github], labels: ["bug", "urgent"])
+      swapped = Consent.redeem(token, @issue, platforms: [:github], labels: ["bug", "urgent"])
+      assert swapped == {:error, :payload_mismatch}
     end
   end
 

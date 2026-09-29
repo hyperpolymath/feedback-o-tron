@@ -91,6 +91,43 @@ defmodule FeedbackATron.EscriptSmokeTest do
            "HTTP intake still answering after stdin closed"
   end
 
+  test "serve --no-stdio against an occupied port exits non-zero; it does not sleep" do
+    {:ok, holder} = :gen_tcp.listen(0, ip: {127, 0, 0, 1}, reuseaddr: true)
+    {:ok, port} = :inet.port(holder)
+
+    child =
+      Port.open({:spawn_executable, @bin}, [
+        :binary,
+        :exit_status,
+        :stderr_to_stdout,
+        args: ["serve", "--no-stdio", "--http-port", Integer.to_string(port)]
+      ])
+
+    assert {:exited, code, output} = wait_for_port_exit(child, 30_000),
+           "serve --no-stdio never exited against an occupied port. " <>
+             "A door that cannot open must not leave the engine sleeping " <>
+             "with nothing listening."
+
+    :ok = :gen_tcp.close(holder)
+
+    assert code != 0
+    assert output =~ "did not start"
+    assert output =~ "eaddrinuse"
+  end
+
+  defp wait_for_port_exit(port, timeout, acc \\ "")
+
+  defp wait_for_port_exit(_port, timeout, acc) when timeout <= 0, do: {:timeout, acc}
+
+  defp wait_for_port_exit(port, timeout, acc) do
+    receive do
+      {^port, {:data, data}} -> wait_for_port_exit(port, timeout, acc <> data)
+      {^port, {:exit_status, code}} -> {:exited, code, acc}
+    after
+      1_000 -> wait_for_port_exit(port, timeout - 1_000, acc)
+    end
+  end
+
   defp wait_until(0, _sleep_ms, _fun), do: false
 
   defp wait_until(tries, sleep_ms, fun) do

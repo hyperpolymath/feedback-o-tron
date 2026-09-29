@@ -174,11 +174,12 @@ defmodule FeedbackATron.Consent do
       {:ok, %{digest: ^digest, issued_at: issued_at}} when now - issued_at <= @ttl_ms ->
         # One-time, spent or not: it leaves the table either way, so a
         # mismatch cannot be retried with the same value.
-        {:reply, :ok, %{state | capabilities: Map.delete(state.capabilities, token)}}
+        capabilities = Map.delete(state.capabilities, token)
+        {:reply, :ok, %{state | capabilities: capabilities}}
 
       {:ok, %{digest: ^digest}} ->
-        {:reply, {:error, :expired_capability},
-         %{state | capabilities: Map.delete(state.capabilities, token)}}
+        capabilities = Map.delete(state.capabilities, token)
+        {:reply, {:error, :expired_capability}, %{state | capabilities: capabilities}}
 
       {:ok, _meta} ->
         Logger.warning(
@@ -186,8 +187,8 @@ defmodule FeedbackATron.Consent do
             "A capability covers exactly the report that was shown."
         )
 
-        {:reply, {:error, :payload_mismatch},
-         %{state | capabilities: Map.delete(state.capabilities, token)}}
+        capabilities = Map.delete(state.capabilities, token)
+        {:reply, {:error, :payload_mismatch}, %{state | capabilities: capabilities}}
     end
   end
 

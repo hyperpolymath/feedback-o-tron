@@ -243,8 +243,8 @@ defmodule FeedbackATron.CLITest do
       {:submit, issue, issue_opts} = CLI.parse_args(@args)
 
       assert :ok = FeedbackATron.Consent.redeem(capability, issue, issue_opts)
-      assert {:error, :unknown_capability} =
-               FeedbackATron.Consent.redeem(capability, issue, issue_opts)
+      replay = FeedbackATron.Consent.redeem(capability, issue, issue_opts)
+      assert replay == {:error, :unknown_capability}
     end
 
     test "a yes with the consent service down sends nothing and exits non-zero" do

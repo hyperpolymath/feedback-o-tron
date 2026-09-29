@@ -102,15 +102,48 @@ defmodule FeedbackATron.DoorsTest do
       assert opts[:port] == port
     end
 
-    test "the HTTP child is skipped while another socket owns the port" do
-      {:ok, holder} = :gen_tcp.listen(0, ip: {127, 0, 0, 1}, reuseaddr: true)
-      {:ok, port} = :inet.port(holder)
+    test "a free port is still only a hint: the child is handed back either way" do
+      {:ok, probe} = :gen_tcp.listen(0, ip: {127, 0, 0, 1}, reuseaddr: true)
+      {:ok, port} = :inet.port(probe)
+      :ok = :gen_tcp.close(probe)
+
       config = Doors.config([http: true, http_port: port, http_ip: {127, 0, 0, 1}], %{})
 
-      assert Doors.children(config) == []
+      assert [{Bandit, opts}] = Doors.children(config)
+      assert opts[:port] == port
+    end
 
-      :ok = :gen_tcp.close(holder)
-      assert [{Bandit, _}] = Doors.children(config)
+    test "an occupied port is not silently dropped: the child is still handed back" do
+      {:ok, holder} = :gen_tcp.listen(0, ip: {127, 0, 0, 1}, reuseaddr: true)
+      {:ok, port} = :inet.port(holder)
+      on_exit(fn -> :gen_tcp.close(holder) end)
+
+      config = Doors.config([http: true, http_port: port, http_ip: {127, 0, 0, 1}], %{})
+
+      # This is the whole point of the change. The engine used to probe the
+      # port and quietly drop the child, so `serve --no-stdio` slept forever
+      # with no door open and nothing said so. The door is now always asked
+      # for, and the bind failure is left to surface at startup -- which the
+      # next test measures.
+      assert [{Bandit, opts}] = Doors.children(config)
+      assert opts[:port] == port
+    end
+
+    test "starting a door that cannot bind fails instead of starting nothing" do
+      Process.flag(:trap_exit, true)
+
+      {:ok, holder} = :gen_tcp.listen(0, ip: {127, 0, 0, 1}, reuseaddr: true)
+      {:ok, port} = :inet.port(holder)
+      on_exit(fn -> :gen_tcp.close(holder) end)
+
+      config = Doors.config([http: true, http_port: port, http_ip: {127, 0, 0, 1}], %{})
+      children = Doors.children(config)
+
+      assert {:error, reason} = Supervisor.start_link(children, strategy: :one_for_one)
+
+      text = inspect(reason)
+      assert text =~ "Bandit"
+      assert text =~ "eaddrinuse"
     end
   end
 end

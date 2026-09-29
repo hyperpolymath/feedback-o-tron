@@ -12,9 +12,11 @@ defmodule FeedbackATron.Doors do
 
   OS env names are read new spelling first, legacy second; the first name
   that is *present* decides.
-  """
 
-  require Logger
+  A door that is asked for is a door that must open. `children/1` is pure and
+  always answers with the child asked for; whether it can actually bind is the
+  supervisor's problem, and a bind failure is a startup failure.
+  """
 
   @default_port 7722
   @default_ip {127, 0, 0, 1}
@@ -63,31 +65,24 @@ defmodule FeedbackATron.Doors do
 
   defp mcp_children(_), do: []
 
+  # The HTTP door is either open or the engine is broken. It is never quietly
+  # absent.
+  #
+  # There used to be a `port_free?/1` probe here: listen on the port, close the
+  # socket, and drop the Bandit child if the probe failed. That was two defects
+  # in one. It was a check-then-bind race — whatever owned the port at probe
+  # time could take it again before Bandit bound, and whatever took it after
+  # the probe made Bandit fail anyway. And it made the failure invisible:
+  # `serve --no-stdio` dropped the only door it had and then slept forever,
+  # looking healthy and serving nothing.
+  #
+  # Bandit binds for us now. A bind failure propagates out of the supervision
+  # tree, and `FeedbackATron.CLI` reports it and exits non-zero.
   defp http_children(%{http: true, http_ip: ip, http_port: port}) do
-    if port_free?(ip, port) do
-      [{Bandit, plug: FeedbackATron.HTTPIntake.Router, scheme: :http, ip: ip, port: port}]
-    else
-      Logger.warning(
-        "HTTP intake not started: #{:inet.ntoa(ip)}:#{port} is already in use; " <>
-          "another feedback-o-tron serve may own it"
-      )
-
-      []
-    end
+    [{Bandit, plug: FeedbackATron.HTTPIntake.Router, scheme: :http, ip: ip, port: port}]
   end
 
   defp http_children(_), do: []
-
-  defp port_free?(ip, port) do
-    case :gen_tcp.listen(port, ip: ip, reuseaddr: true) do
-      {:ok, socket} ->
-        :ok = :gen_tcp.close(socket)
-        true
-
-      {:error, _} ->
-        false
-    end
-  end
 
   defp pick(app_env, key, fallback) do
     case Keyword.fetch(app_env, key) do
