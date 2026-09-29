@@ -91,7 +91,23 @@ jobs:
         run: mix format --check-formatted
       - name: Run tests
         if: steps.detect.outputs.relevant == 'true'
-        run: mix test --trace
+        # Teed, so a failure can be re-emitted as an annotation below. A red
+        # cell whose log archive nobody can open is a red cell nobody fixes.
+        run: |
+          set -o pipefail
+          mix test --trace 2>&1 | tee test-output.txt
+      - name: Relay the failure to the Checks tab
+        if: failure() && steps.detect.outputs.relevant == 'true'
+        run: |
+          python3 - <<'PY'
+          import re
+          text = open("test-output.txt", errors="replace").read()
+          blocks = re.findall(r"\n\s+\d+\) test.*?(?=\n\n\n|\Z)", text, re.S)
+          detail = "\n".join(blocks) or text[-6000:]
+          warnings = [l for l in text.splitlines() if l.strip().startswith("warning:")]
+          msg = (detail + "\n--- warnings ---\n" + "\n".join(warnings[:40]))[:24000]
+          print("::error::" + msg.replace("%", "%25").replace("\r", "").replace("\n", "%0A"))
+          PY
       - name: Build the escript
         if: steps.detect.outputs.relevant == 'true'
         run: mix escript.build
