@@ -97,7 +97,10 @@ jobs:
         run: mix test --only escript
       - name: Prove nothing is sent without a person's typed yes
         if: steps.detect.outputs.relevant == 'true'
-        run: scripts/consent_bypass_check.sh
+        # --self-test also builds a mutant whose consent gate is defeated and
+        # requires this check to fail against it. A harness that has never
+        # been seen to fail is not evidence (#95 F3).
+        run: scripts/consent_bypass_check.sh --self-test
   dialyzer:
     name: Dialyzer
     runs-on: ubuntu-latest

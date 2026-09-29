@@ -7,7 +7,7 @@ defmodule FeedbackATron.CLI do
   Supports both direct CLI usage and MCP server mode for Claude integration.
   """
 
-  alias FeedbackATron.Submitter
+  alias FeedbackATron.{Consent, Submitter}
 
   @spec main([String.t()]) :: no_return()
   def main(args) do
@@ -110,9 +110,23 @@ defmodule FeedbackATron.CLI do
         do_submit(issue, submit_opts, run_opts)
 
       confirm_send(issue, submit_opts, run_opts) ->
-        # The person saw the whole payload and typed y. That yes, and nothing
-        # else, is what lets Submitter really send.
-        do_submit(issue, Keyword.put(submit_opts, :consent, :human_confirmed), run_opts)
+        # The person saw the whole payload and typed y. Turn that yes into a
+        # capability here — at the trusted boundary, in the process that asked
+        # the question — and carry no claim about it into the opts: a value
+        # any caller could construct is not proof that anybody typed anything.
+        case Consent.issue(issue, submit_opts) do
+          {:ok, capability} ->
+            do_submit(issue, Keyword.put(submit_opts, :consent, capability), run_opts)
+
+          {:error, :consent_service_unavailable} ->
+            IO.puts(
+              :stderr,
+              "feedback-o-tron: the consent service is not running; refusing to send. " <>
+                "Nothing was sent."
+            )
+
+            {:halt, 4}
+        end
 
       true ->
         IO.puts(:stderr, "Not sent.")
@@ -123,7 +137,11 @@ defmodule FeedbackATron.CLI do
   # SP1b pre-ledger rule: nothing leaves the machine from the CLI until a
   # person has seen the whole payload and typed yes at a terminal. The privacy
   # ledger (SP3) replaces this with a per-report ledger and standing choices.
-  # There is no --yes flag on purpose.
+  #
+  # The yes is converted into a capability by FeedbackATron.Consent and is
+  # then the only thing Submitter will accept as consent. There is no --yes
+  # flag on purpose, and no non-terminal route to a capability: an assistant
+  # must never type the y on a person's behalf.
   defp confirm_send(issue, submit_opts, run_opts) do
     IO.puts(payload_preview(issue, submit_opts))
     confirm = Keyword.get(run_opts, :confirm, &tty_confirm/0)
